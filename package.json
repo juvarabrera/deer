@@ -4,18 +4,20 @@
   "description": "Unattended coding agent.",
   "type": "module",
   "bin": {
-    "deer": "src/cli.ts"
+    "deer": "src/cli.tsx"
   },
   "scripts": {
     "test": "bun test",
-    "dev": "bun run src/cli.ts"
+    "dev": "bun run src/cli.tsx"
   },
   "dependencies": {
     "@iarna/toml": "^3.0.0",
-    "dockerode": "^4.0.0"
+    "@inkjs/ui": "^2.0.0",
+    "ink": "^6.0.0",
+    "react": "^19.0.0"
   },
   "devDependencies": {
-    "@types/dockerode": "^3.3.0",
+    "@types/react": "^19.0.0",
     "bun-types": "latest"
   }
 }
