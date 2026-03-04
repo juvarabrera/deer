@@ -50,8 +50,8 @@ interface AgentState {
   proc: { kill(): void } | null;
   /** Timer handle */
   timer: ReturnType<typeof setInterval> | null;
-  /** Whether the PR has been merged on GitHub */
-  prMerged: boolean;
+  /** PR state on GitHub: null = unchecked, "open" = open, "merged" = merged, "closed" = closed */
+  prState: "open" | "merged" | "closed" | null;
   /** User attached interactively — headless process killed, attach handler owns teardown */
   userAttached: boolean;
   /** Agent is waiting for user input (e.g. AskUserQuestion tool) */
@@ -516,19 +516,21 @@ async function finalizeAgent(
   }
 }
 
-/** Check if a PR has been merged via `gh pr view`. */
-async function checkPrMerged(prUrl: string): Promise<boolean> {
+/** Check the current state of a PR via `gh pr view`. */
+async function checkPrState(prUrl: string): Promise<"open" | "merged" | "closed" | null> {
   try {
     const proc = Bun.spawn(
       ["gh", "pr", "view", prUrl, "--json", "state", "-q", ".state"],
       { stdout: "pipe", stderr: "pipe" },
     );
     const code = await proc.exited;
-    if (code !== 0) return false;
+    if (code !== 0) return null;
     const state = (await new Response(proc.stdout).text()).trim();
-    return state === "MERGED";
+    if (state === "MERGED") return "merged";
+    if (state === "CLOSED") return "closed";
+    return "open";
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -628,7 +630,7 @@ function historicalAgent(task: PersistedTask, id: number): AgentState {
     error: task.error || "",
     proc: null,
     timer: null,
-    prMerged: false,
+    prState: null,
     userAttached: false,
     needsAttention: false,
     tmuxWatched: false,
@@ -698,21 +700,24 @@ export default function Dashboard({ cwd }: { cwd: string }) {
 
   useEffect(() => {
     const check = async () => {
+      // Check agents with a PR URL that are either unchecked or still open (merged/closed are terminal)
       const toCheck = agentsRef.current.filter(
-        (a) => a.status === "completed" && a.result?.prUrl && !a.prMerged && !a.historical,
+        (a) => a.result?.prUrl && (a.prState === null || a.prState === "open"),
       );
       if (toCheck.length === 0) return;
 
       let changed = false;
       for (const agent of toCheck) {
-        if (await checkPrMerged(agent.result!.prUrl)) {
-          agent.prMerged = true;
+        const state = await checkPrState(agent.result!.prUrl);
+        if (state !== null && state !== agent.prState) {
+          agent.prState = state;
           changed = true;
         }
       }
       if (changed) setAgents((prev) => [...prev]);
     };
 
+    check(); // Run immediately on mount to populate state for historical agents
     const interval = setInterval(check, PR_MERGE_CHECK_INTERVAL_MS);
     return () => clearInterval(interval);
   }, []);
@@ -738,7 +743,7 @@ export default function Dashboard({ cwd }: { cwd: string }) {
       error: "",
       proc: null,
       timer: null,
-      prMerged: false,
+      prState: null,
       userAttached: false,
       needsAttention: false,
       tmuxWatched: false,
@@ -1039,7 +1044,7 @@ export default function Dashboard({ cwd }: { cwd: string }) {
   useInput((input, key) => {
     if (suspended) return;
 
-    const visible = agents.filter((a) => !a.prMerged || a.historical);
+    const visible = agents;
     const clampedIdx = Math.min(selectedIdx, Math.max(visible.length - 1, 0));
 
     // Quit handling
@@ -1139,7 +1144,7 @@ export default function Dashboard({ cwd }: { cwd: string }) {
 
   // ── Derived state ────────────────────────────────────────────────
 
-  const visibleAgents = agents.filter((a) => !a.prMerged || a.historical);
+  const visibleAgents = agents;
   const clampedIdx = Math.min(selectedIdx, Math.max(visibleAgents.length - 1, 0));
   const activeCount = visibleAgents.filter(isActive).length;
   const selected = visibleAgents[clampedIdx] || null;
@@ -1152,6 +1157,7 @@ export default function Dashboard({ cwd }: { cwd: string }) {
   const maxVisibleEntries = Math.max(Math.floor(listHeight / ENTRY_ROWS), 1);
 
   // Row fixed overhead: paddingX(2) + pointer(1) + icon(1) + time(5) + gaps(4) = 13
+  // +3 for PR badge (emoji 2-wide + gap 1) when present
   const rowOverhead = 13;
 
   // ── Render ───────────────────────────────────────────────────────
@@ -1191,7 +1197,14 @@ export default function Dashboard({ cwd }: { cwd: string }) {
 
             // Title line: overhead = paddingX(2) + pointer(1) + gap(1) + icon(1) + gap(1) + gap(1) + time(4) = 11
             const titleOverhead = 11;
-            const titleWidth = Math.max(termWidth - titleOverhead, 5);
+            const prBadge = agent.result?.prUrl && agent.prState
+              ? agent.prState === "open"
+                ? { icon: "🟢", color: "green" }
+                : agent.prState === "merged"
+                  ? { icon: "🟣", color: "magenta" }
+                  : { icon: "🔴", color: "red" }
+              : null;
+            const titleWidth = Math.max(termWidth - titleOverhead - (prBadge ? 3 : 0), 5);
             // Log line: paddingX(2) + indent(3) = 5
             const logWidth = Math.max(termWidth - 5, 5);
 
@@ -1212,6 +1225,7 @@ export default function Dashboard({ cwd }: { cwd: string }) {
                       {truncate(agent.prompt, titleWidth)}
                     </Text>
                   </Box>
+                  {prBadge && <Text>{prBadge.icon}</Text>}
                   <Text dimColor>{formatTime(agent.elapsed)}</Text>
                 </Box>
                 {/* Log lines */}
@@ -1242,7 +1256,12 @@ export default function Dashboard({ cwd }: { cwd: string }) {
               </Text>
             ))}
             {selected.result?.prUrl && (
-              <Text color="green" bold>PR: {selected.result.prUrl}</Text>
+              <Text
+                color={selected.prState === "merged" ? "magenta" : selected.prState === "closed" ? "red" : "green"}
+                bold
+              >
+                PR ({selected.prState ?? "checking…"}): {selected.result.prUrl}
+              </Text>
             )}
             {selected.error && (
               <Text color="red">{truncate(selected.error, termWidth - 4)}</Text>
