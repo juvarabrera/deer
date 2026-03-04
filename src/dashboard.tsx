@@ -468,9 +468,7 @@ async function startClaudeMetadata(meta: SandboxMeta, agent: AgentState): Promis
 
   // Drain stdout/stderr to prevent backpressure
   const stdoutPromise = new Response(proc.stdout).text();
-  const stderrPromise = new Response(proc.stderr).text().then((text) => {
-    if (text.trim()) appendLog(agent, `[metadata stderr] ${text.trim()}`);
-  });
+  const stderrPromise = new Response(proc.stderr).text();
 
   let timeoutId: ReturnType<typeof setTimeout>;
   const timeout = new Promise<never>((_, reject) => {
@@ -484,8 +482,12 @@ async function startClaudeMetadata(meta: SandboxMeta, agent: AgentState): Promis
     await Promise.race([
       proc.exited.then(async (code) => {
         await stdoutPromise;
-        await stderrPromise;
-        if (code !== 0) throw new Error(`Metadata extraction exited with code ${code}`);
+        const stderr = await stderrPromise;
+        if (stderr.trim()) appendLog(agent, `[metadata stderr] ${stderr.trim()}`);
+        if (code !== 0) {
+          const hint = stderr.trim().split("\n").pop() || "";
+          throw new Error(`Metadata extraction exited with code ${code}${hint ? `: ${hint}` : ""}`);
+        }
       }),
       timeout,
     ]);
@@ -545,6 +547,16 @@ async function finalizeAgent(
   setAgents: (updater: (prev: AgentState[]) => AgentState[]) => void,
 ): Promise<void> {
   if (!agent.meta) return;
+
+  // Kill the dead tmux session left over from the main Claude run
+  // (remain-on-exit keeps it alive). Cleaning up avoids stale lock files
+  // or session state that could interfere with the metadata invocation.
+  try {
+    await Bun.spawn([
+      "docker", "sandbox", "exec", agent.meta.sandboxName,
+      "tmux", "kill-session", "-t", "deer",
+    ], { stdout: "pipe", stderr: "pipe" }).exited;
+  } catch { /* ignore */ }
 
   // Metadata extraction (non-fatal)
   agent.lastActivity = "Generating PR metadata...";
