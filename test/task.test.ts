@@ -1,5 +1,5 @@
 import { test, expect, describe, afterEach } from "bun:test";
-import { generateTaskId, dataDir, historyPath, loadHistory, appendToHistory } from "../src/task";
+import { generateTaskId, dataDir, historyPath, loadHistory, appendToHistory, removeFromHistory } from "../src/task";
 import type { PersistedTask } from "../src/task";
 import { rm, mkdtemp } from "node:fs/promises";
 import { join } from "node:path";
@@ -164,5 +164,41 @@ describe("history persistence", () => {
     expect(loadedA[0].prompt).toBe("task A");
     expect(loadedB).toHaveLength(1);
     expect(loadedB[0].prompt).toBe("task B");
+  });
+
+  test("removeFromHistory deletes a task by taskId", async () => {
+    const repoPath = makeFakeDataDir();
+    const task1 = makeTask({ prompt: "task 1" });
+    const task2 = makeTask({ prompt: "task 2" });
+    const task3 = makeTask({ prompt: "task 3" });
+
+    await appendToHistory(repoPath, task1);
+    await appendToHistory(repoPath, task2);
+    await appendToHistory(repoPath, task3);
+
+    await removeFromHistory(repoPath, task2.taskId);
+    const loaded = await loadHistory(repoPath);
+
+    expect(loaded).toHaveLength(2);
+    expect(loaded.map((t) => t.prompt)).toEqual(["task 1", "task 3"]);
+  });
+
+  test("removeFromHistory with nonexistent taskId is a no-op", async () => {
+    const repoPath = makeFakeDataDir();
+    const task = makeTask({ prompt: "keep me" });
+
+    await appendToHistory(repoPath, task);
+    await removeFromHistory(repoPath, "deer_nonexistent");
+
+    const loaded = await loadHistory(repoPath);
+    expect(loaded).toHaveLength(1);
+    expect(loaded[0].prompt).toBe("keep me");
+  });
+
+  test("removeFromHistory on nonexistent file is a no-op", async () => {
+    const repoPath = makeFakeDataDir();
+    await removeFromHistory(repoPath, "deer_whatever");
+    const loaded = await loadHistory(repoPath);
+    expect(loaded).toEqual([]);
   });
 });

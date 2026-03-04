@@ -60,6 +60,14 @@ if [ -f "$WORKTREE_DIR/$PR_BODY_FILE" ]; then
   rm -f "$WORKTREE_DIR/$PR_BODY_FILE"
 fi
 
+# ── Clean up stale git locks ────────────────────────────────────────
+# The sandbox may have been killed mid-git-operation, leaving lock files.
+
+GIT_DIR=$(git -C "$WORKTREE_DIR" rev-parse --git-dir 2>/dev/null || true)
+if [ -n "$GIT_DIR" ]; then
+  rm -f "$GIT_DIR/index.lock" 2>/dev/null || true
+fi
+
 # ── Commit uncommitted changes (if any) ─────────────────────────────
 # The agent may have already committed its work. Only create a commit if
 # there are staged, unstaged, or untracked changes left over.

@@ -123,6 +123,27 @@ export async function loadHistory(repoPath: string): Promise<PersistedTask[]> {
 }
 
 /**
+ * Remove a task from the repo's history file by taskId.
+ */
+export async function removeFromHistory(repoPath: string, taskId: string): Promise<void> {
+  const path = historyPath(repoPath);
+  const file = Bun.file(path);
+  if (!(await file.exists())) return;
+
+  const text = await file.text();
+  const lines = text.split("\n").filter((line) => {
+    if (!line.trim()) return false;
+    try {
+      const task: PersistedTask = JSON.parse(line);
+      return task.taskId !== taskId;
+    } catch {
+      return true;
+    }
+  });
+  await Bun.write(path, lines.length > 0 ? lines.join("\n") + "\n" : "");
+}
+
+/**
  * Append a completed/failed/cancelled task to the repo's history file.
  */
 export async function appendToHistory(repoPath: string, task: PersistedTask): Promise<void> {

@@ -3,7 +3,7 @@ import { TextInput, Spinner } from "@inkjs/ui";
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { join } from "node:path";
 import { mkdir } from "node:fs/promises";
-import { generateTaskId, transcriptsDir, loadHistory, appendToHistory } from "./task";
+import { generateTaskId, transcriptsDir, loadHistory, appendToHistory, removeFromHistory } from "./task";
 import type { PersistedTask } from "./task";
 
 // ── Types ────────────────────────────────────────────────────────────
@@ -381,21 +381,26 @@ async function startClaudeMetadata(meta: SandboxMeta, agent: AgentState): Promis
     if (text.trim()) appendLog(agent, `[metadata stderr] ${text.trim()}`);
   });
 
-  const timeout = new Promise<never>((_, reject) =>
-    setTimeout(() => {
+  let timeoutId: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
       proc.kill();
       reject(new Error("Metadata extraction timed out"));
-    }, METADATA_TIMEOUT_MS),
-  );
+    }, METADATA_TIMEOUT_MS);
+  });
 
-  await Promise.race([
-    proc.exited.then(async (code) => {
-      await stdoutPromise;
-      await stderrPromise;
-      if (code !== 0) throw new Error(`Metadata extraction exited with code ${code}`);
-    }),
-    timeout,
-  ]);
+  try {
+    await Promise.race([
+      proc.exited.then(async (code) => {
+        await stdoutPromise;
+        await stderrPromise;
+        if (code !== 0) throw new Error(`Metadata extraction exited with code ${code}`);
+      }),
+      timeout,
+    ]);
+  } finally {
+    clearTimeout(timeoutId!);
+  }
 }
 
 async function teardownAgent(meta: SandboxMeta, cwd: string): Promise<TeardownResult> {
@@ -1062,6 +1067,7 @@ export default function Dashboard({ cwd }: { cwd: string }) {
         if (agent && !isActive(agent)) {
           setAgents((prev) => prev.filter((a) => a !== agent));
           setSelectedIdx((prev) => Math.min(prev, Math.max(visible.length - 2, 0)));
+          removeFromHistory(cwd, agent.taskId);
         }
       }
     }
@@ -1160,22 +1166,27 @@ export default function Dashboard({ cwd }: { cwd: string }) {
       </Box>
 
       {/* Log detail panel */}
-      {logExpanded && selected && (
-        <Box flexDirection="column" paddingX={1} height={detailHeight}>
-          <Text dimColor>{"╌".repeat(termWidth - 2)}</Text>
-          {selected.logs.slice(-MAX_VISIBLE_LOGS).map((line, i) => (
-            <Text key={i} dimColor wrap="truncate">
-              {truncate(line, termWidth - 4)}
-            </Text>
-          ))}
-          {selected.result?.prUrl && (
-            <Text color="green" bold>PR: {selected.result.prUrl}</Text>
-          )}
-          {selected.error && (
-            <Text color="red">{truncate(selected.error, termWidth - 4)}</Text>
-          )}
-        </Box>
-      )}
+      {logExpanded && selected && (() => {
+        // Reserve lines for fixed elements: 1 divider + optional PR + optional error
+        const extraLines = (selected.result?.prUrl ? 1 : 0) + (selected.error ? 1 : 0);
+        const visibleLogs = Math.max(MAX_VISIBLE_LOGS - extraLines, 1);
+        return (
+          <Box flexDirection="column" paddingX={1} height={detailHeight} overflowY="hidden">
+            <Text dimColor>{"╌".repeat(termWidth - 2)}</Text>
+            {selected.logs.slice(-visibleLogs).map((line, i) => (
+              <Text key={i} dimColor wrap="truncate">
+                {truncate(line, termWidth - 4)}
+              </Text>
+            ))}
+            {selected.result?.prUrl && (
+              <Text color="green" bold>PR: {selected.result.prUrl}</Text>
+            )}
+            {selected.error && (
+              <Text color="red">{truncate(selected.error, termWidth - 4)}</Text>
+            )}
+          </Box>
+        );
+      })()}
 
       {/* Input divider + input bar */}
       <Text>{"─".repeat(termWidth)}</Text>
