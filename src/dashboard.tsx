@@ -77,6 +77,8 @@ const STATUS_DISPLAY: Record<AgentStatus, { icon: string; color: string }> = {
 
 const MAX_LOG_LINES = 200;
 const MAX_VISIBLE_LOGS = 5;
+const LOG_LINES_PER_ENTRY = 2;
+const ENTRY_ROWS = 1 + LOG_LINES_PER_ENTRY;
 const MODEL = "sonnet";
 const PR_MERGE_CHECK_INTERVAL_MS = 60_000;
 
@@ -1083,6 +1085,7 @@ export default function Dashboard({ cwd }: { cwd: string }) {
   const chromeHeight = 5; // header + top divider + bottom divider + input + footer
   const detailHeight = logExpanded && selected ? Math.min(MAX_VISIBLE_LOGS + 1, 6) : 0;
   const listHeight = Math.max(termHeight - chromeHeight - detailHeight, 3);
+  const maxVisibleEntries = Math.max(Math.floor(listHeight / ENTRY_ROWS), 1);
 
   // Row fixed overhead: paddingX(2) + pointer(1) + icon(1) + time(5) + gaps(4) = 13
   const rowOverhead = 13;
@@ -1114,45 +1117,50 @@ export default function Dashboard({ cwd }: { cwd: string }) {
             <Text dimColor>Type a prompt below and press Enter to launch an agent</Text>
           </Box>
         ) : (
-          visibleAgents.slice(0, listHeight).map((agent, i) => {
+          visibleAgents.slice(0, maxVisibleEntries).map((agent, i) => {
             const display = STATUS_DISPLAY[agent.status];
             const isSelected = i === clampedIdx && !inputFocused;
             const pointer = isSelected ? "▸" : " ";
 
-            // Determine activity text and color
-            let activity: string;
-            let activityColor: string | undefined;
-            if (agent.result?.prUrl) {
-              activity = agent.result.prUrl;
-              activityColor = "green";
-            } else if (agent.error) {
-              activity = agent.error;
-              activityColor = "red";
-            } else if (agent.currentTool) {
-              activity = agent.currentTool;
-            } else if (agent.lastActivity) {
-              activity = agent.lastActivity;
-            } else {
-              activity = agent.status;
-            }
+            // Gather log lines to show beneath the title
+            const recentLogs = agent.logs.slice(-LOG_LINES_PER_ENTRY);
+
+            // Title line: overhead = paddingX(2) + pointer(1) + gap(1) + icon(1) + gap(1) + gap(1) + time(4) = 11
+            const titleOverhead = 11;
+            const titleWidth = Math.max(termWidth - titleOverhead, 5);
+            // Log line: paddingX(2) + indent(3) = 5
+            const logWidth = Math.max(termWidth - 5, 5);
 
             return (
-              <Box key={agent.id} gap={1}>
-                <Text dimColor={!isSelected}>{pointer}</Text>
-                {agent.status === "running" && agent.needsAttention ? (
-                  <Text>👋</Text>
-                ) : agent.status === "running" ? (
-                  <Spinner label="" />
-                ) : (
-                  <Text color={display.color}>{display.icon}</Text>
-                )}
-                <Text bold={isSelected}>{agent.prompt}</Text>
-                <Box flexGrow={1}>
-                  <Text dimColor={!activityColor} color={activityColor}>
-                    {truncate(activity, Math.max(termWidth - rowOverhead - agent.prompt.length, 5))}
-                  </Text>
+              <Box key={agent.id} flexDirection="column">
+                {/* Title line */}
+                <Box gap={1}>
+                  <Text dimColor={!isSelected}>{pointer}</Text>
+                  {agent.status === "running" && agent.needsAttention ? (
+                    <Text>👋</Text>
+                  ) : agent.status === "running" ? (
+                    <Spinner label="" />
+                  ) : (
+                    <Text color={display.color}>{display.icon}</Text>
+                  )}
+                  <Box flexGrow={1}>
+                    <Text bold={isSelected} wrap="truncate">
+                      {truncate(agent.prompt, titleWidth)}
+                    </Text>
+                  </Box>
+                  <Text dimColor>{formatTime(agent.elapsed)}</Text>
                 </Box>
-                <Text dimColor>{formatTime(agent.elapsed)}</Text>
+                {/* Log lines */}
+                {Array.from({ length: LOG_LINES_PER_ENTRY }).map((_, j) => {
+                  const line = recentLogs[j];
+                  return (
+                    <Box key={j} paddingLeft={3}>
+                      <Text dimColor wrap="truncate">
+                        {line ? truncate(line, logWidth) : " "}
+                      </Text>
+                    </Box>
+                  );
+                })}
               </Box>
             );
           })
