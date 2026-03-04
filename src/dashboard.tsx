@@ -159,7 +159,7 @@ export async function needsHumanInput(transcript: string[]): Promise<boolean> {
   ].join("\n");
 
   try {
-    const { CLAUDECODE: _, ...env } = process.env;
+    const { CLAUDECODE: _, ANTHROPIC_API_KEY: __, ...env } = process.env;
     const proc = Bun.spawn([
       "claude", "-p", "--output-format", "text", "--model", "haiku",
     ], {
