@@ -10,12 +10,6 @@ import type { DeerConfig } from "./config";
 import { transition, availableActions, resolveKeypress, ACTION_BINDINGS } from "./state-machine";
 import type { AgentState as AgentStatus } from "./state-machine";
 
-// The Docker Sandbox proxy reads ANTHROPIC_API_KEY from the host process env
-// on every `docker sandbox exec` call and injects it into API requests,
-// overriding OAuth auth. Remove it from the process so child processes
-// (especially docker sandbox exec) never inherit it.
-delete process.env.ANTHROPIC_API_KEY;
-
 // ── Types ────────────────────────────────────────────────────────────
 
 interface SandboxMeta {
@@ -136,21 +130,6 @@ async function withSuspendedTerminal(
     process.stdout.write("\x1b[?1049h\x1b[2J\x1b[H");
     setSuspended(false);
   }
-}
-
-/** Spawn a bash script, check exit code, parse JSON from last stdout line. */
-async function runScriptJson<T>(args: string[], cwd: string): Promise<T> {
-  const proc = Bun.spawn(args, { cwd, stdout: "pipe", stderr: "pipe" });
-  const code = await proc.exited;
-  if (code !== 0) {
-    const stderr = await new Response(proc.stderr).text();
-    throw new Error(`Script failed (exit ${code}): ${stderr.trim().split("\n").pop()}`);
-  }
-  const stdout = await new Response(proc.stdout).text();
-  const lines = stdout.trim().split("\n").filter(Boolean);
-  const jsonLine = lines[lines.length - 1];
-  if (!jsonLine) throw new Error("Script produced no output");
-  return JSON.parse(jsonLine) as T;
 }
 
 /** Spawn claude -p inside a docker sandbox with OAuth env. */
@@ -623,14 +602,7 @@ async function startClaudeMetadata(meta: SandboxMeta, agent: AgentState): Promis
   }
 }
 
-async function teardownAgent(meta: SandboxMeta, cwd: string): Promise<TeardownResult> {
-  return runScriptJson<TeardownResult>([
-    "bash", join(SCRIPTS_DIR, "teardown-sandbox.sh"),
-    cwd, meta.worktreePath, meta.sandboxName, meta.tempBranch, meta.baseBranch, meta.model, meta.deerTmpDir,
-  ], cwd);
-}
-
-/** Like teardownAgent but captures stderr lines into agent logs. */
+/** Run teardown script, streaming stderr into agent logs. */
 async function teardownAgentWithLogs(meta: SandboxMeta, cwd: string, agent: AgentState): Promise<TeardownResult> {
   const proc = Bun.spawn([
     "bash", join(SCRIPTS_DIR, "teardown-sandbox.sh"),
@@ -762,64 +734,6 @@ async function checkPrState(prUrl: string): Promise<"open" | "merged" | "closed"
   } catch {
     return null;
   }
-}
-
-// ── NDJSON Parser ────────────────────────────────────────────────────
-
-/** @internal Exported for testing */
-export function parseNdjsonLine(line: string, agent: AgentState): boolean {
-  if (!line.trim()) return false;
-  let changed = false;
-
-  try {
-    const event = JSON.parse(line);
-
-    // Assistant text content
-    if (event.type === "assistant" && event.message?.content) {
-      for (const block of event.message.content) {
-        if (block.type === "text" && block.text) {
-          agent.lastActivity = truncate(block.text.replace(/\n/g, " ").trim(), 120);
-          appendLog(agent, block.text.trim());
-          agent.transcript.push(block.text);
-          changed = true;
-        }
-        if (block.type === "tool_use") {
-          const name = block.name || "tool";
-          const input = block.input ? JSON.stringify(block.input).slice(0, 100) : "";
-          agent.currentTool = `${name} ${input}`;
-          appendLog(agent, `[tool] ${name} ${input}`);
-          changed = true;
-        }
-      }
-    }
-
-    // Tool result
-    if (event.type === "result" && event.result) {
-      agent.lastActivity = truncate(String(event.result).replace(/\n/g, " ").trim(), 120);
-      changed = true;
-    }
-
-    // Content block delta (streaming)
-    if (event.type === "content_block_delta") {
-      if (event.delta?.type === "text_delta" && event.delta.text) {
-        agent.lastActivity = truncate(event.delta.text.replace(/\n/g, " ").trim(), 120);
-        changed = true;
-      }
-    }
-
-    // System message
-    if (event.type === "system" && event.message) {
-      appendLog(agent, `[system] ${event.message}`);
-    }
-  } catch {
-    // Not valid JSON — treat as plain text log
-    if (line.trim()) {
-      appendLog(agent, line.trim());
-      changed = true;
-    }
-  }
-
-  return changed;
 }
 
 /** Save a finished agent to the repo's history file. */
