@@ -1,7 +1,7 @@
 import { Box, Text, useInput, useApp, useStdout } from "ink";
 import { Spinner } from "@inkjs/ui";
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { loadHistory, upsertHistory, removeFromHistory } from "./task";
+import { loadHistory, upsertHistory, removeFromHistory, loadPromptHistory, savePromptHistory } from "./task";
 import type { PersistedTask } from "./task";
 import { loadConfig } from "./config";
 import type { DeerConfig } from "./config";
@@ -438,6 +438,7 @@ export default function Dashboard({ cwd }: { cwd: string }) {
     runPreflight().then(setPreflight);
     loadConfig(cwd).then((cfg) => { configRef.current = cfg; });
     syncWithHistory();
+    loadPromptHistory().then(setPromptHistory);
 
     // Start ~/.claude integrity monitor
     startClaudeConfigGuard((alert) => {
@@ -1095,7 +1096,11 @@ export default function Dashboard({ cwd }: { cwd: string }) {
                 defaultValue={inputDefault}
                 onSubmit={(value) => {
                   if (value.trim()) {
-                    setPromptHistory((prev) => [...prev, value.trim()]);
+                    setPromptHistory((prev) => {
+                      const next = [...prev, value.trim()];
+                      savePromptHistory(next).catch(() => {});
+                      return next;
+                    });
                     setHistoryIdx(-1);
                     setInputDefault("");
                     setInputKey((k) => k + 1);

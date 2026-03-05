@@ -136,3 +136,32 @@ export async function upsertHistory(repoPath: string, task: PersistedTask): Prom
   if (!replaced) lines.push(JSON.stringify(task));
   await Bun.write(path, lines.join("\n") + "\n");
 }
+
+// ── Prompt Input History ──────────────────────────────────────────────
+
+const PROMPT_HISTORY_MAX = 500;
+
+function promptHistoryPath(): string {
+  return `${dataDir()}/prompt-history.json`;
+}
+
+/** Load persisted prompt input history. Returns an empty array if none saved. */
+export async function loadPromptHistory(): Promise<string[]> {
+  const file = Bun.file(promptHistoryPath());
+  if (!(await file.exists())) return [];
+  try {
+    const data = await file.json();
+    if (Array.isArray(data)) return data as string[];
+  } catch {
+    // ignore malformed file
+  }
+  return [];
+}
+
+/** Append a new entry to the persisted prompt history, capping at PROMPT_HISTORY_MAX. */
+export async function savePromptHistory(history: string[]): Promise<void> {
+  const dir = dataDir();
+  await mkdir(dir, { recursive: true });
+  const capped = history.slice(-PROMPT_HISTORY_MAX);
+  await Bun.write(promptHistoryPath(), JSON.stringify(capped));
+}

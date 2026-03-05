@@ -37,6 +37,8 @@ const NONO_BIN = "nono";
 export function buildNonoArgs(options: NonoOptions): string[] {
   const { worktreePath, repoGitDir, allowlist, extraReadPaths, extraWritePaths } = options;
 
+  const home = process.env.HOME ?? "/root";
+
   const args: string[] = [
     NONO_BIN,
     "run",
@@ -48,6 +50,15 @@ export function buildNonoArgs(options: NonoOptions): string[] {
     "--allow", worktreePath,
     // Required in --silent mode to avoid interactive CWD prompt
     "--allow-cwd",
+    // WORKAROUND: Grant write-only access to $HOME. Claude Code creates
+    // ~/.claude.json.backup.<timestamp> files during config saves, and
+    // Landlock blocks new file creation in $HOME since the claude-code
+    // profile only grants inode-level rw to ~/.claude.json itself.
+    // Additionally, atomic writes can change the inode, orphaning the
+    // Landlock rule entirely. --write (not --allow) is used so this
+    // only grants write/create — not read access to $HOME contents.
+    // Tracked upstream: https://github.com/always-further/nono/issues/220
+    "--write", home,
   ];
 
   // Network allowlist — each host gets a --proxy-allow flag
