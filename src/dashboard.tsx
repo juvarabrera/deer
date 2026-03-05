@@ -9,6 +9,7 @@ import { transition, availableActions, resolveKeypress, ACTION_BINDINGS } from "
 import type { AgentState as AgentStatus } from "./state-machine";
 import { startAgent, destroyAgent, deleteTask, createAgentPR } from "./agent";
 import { isTmuxSessionDead, captureTmuxPane } from "./sandbox/index";
+import { resolveRuntime } from "./sandbox/resolve";
 import { detectRepo } from "./git/worktree";
 import { AgentState, createAgentState, historicalAgent, crossInstanceAgent } from "./agent-state";
 import { fuzzyMatch } from "./fuzzy";
@@ -554,6 +555,7 @@ export default function Dashboard({ cwd }: { cwd: string }) {
         baseBranch: effectiveBranch,
         config,
         model: MODEL,
+        runtime: resolveRuntime(config),
         onStatus: (status) => {
           const detail = "message" in status ? status.message : status.phase;
           appendLog(agent, `[setup] ${detail}`);

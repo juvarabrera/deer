@@ -1,7 +1,8 @@
-import { join } from "node:path";
-import { buildNonoArgs, type NonoOptions } from "./nono";
+import type { SandboxRuntime, SandboxCleanup } from "./runtime";
 
-export { buildNonoArgs, type NonoOptions } from "./nono";
+export type { SandboxRuntime, SandboxRuntimeOptions, SandboxCleanup } from "./runtime";
+export { nonoRuntime } from "./nono";
+export { createBwrapRuntime } from "./bwrap";
 
 export interface SandboxSession {
   /** The tmux session name */
@@ -33,13 +34,18 @@ export interface SandboxOptions {
   extraWritePaths?: string[];
   /** Command + args to run inside the sandbox (default: interactive shell) */
   command: string[];
+  /** Sandbox runtime to use
+   * @default nonoRuntime
+   */
+  runtime: SandboxRuntime;
 }
 
 /**
  * Launch a sandboxed process inside a tmux session.
  *
- * 1. Builds the nono command with sandbox capabilities
- * 2. Starts a tmux session running the nono-sandboxed command
+ * 1. Runs the runtime's prepare hook (if any)
+ * 2. Builds the sandboxed command via the runtime
+ * 3. Starts a tmux session running the command
  *
  * The caller gets back a handle to stop everything.
  */
@@ -53,32 +59,17 @@ export async function launchSandbox(options: SandboxOptions): Promise<SandboxSes
     extraReadPaths,
     extraWritePaths,
     command,
+    runtime,
   } = options;
 
-  // Pre-create ~/.claude.json.lock so Landlock can attach a rule to it.
-  // Claude Code's saveConfigWithLock creates this file; without it,
-  // Landlock blocks creation (no MAKE_REG on ~/). See nono#220.
-  const lockFile = join(process.env.HOME ?? "/root", ".claude.json.lock");
-  await Bun.write(lockFile, "").catch(() => {});
+  // Run runtime-specific pre-launch setup (e.g. start a proxy)
+  const runtimeOpts = { worktreePath, repoGitDir, allowlist, extraReadPaths, extraWritePaths, env };
+  const cleanup: SandboxCleanup = await runtime.prepare?.(runtimeOpts) ?? (() => {});
 
-  // Build the nono command
-  const nonoArgs = buildNonoArgs({
-    worktreePath,
-    repoGitDir,
-    allowlist,
-    extraReadPaths,
-    extraWritePaths,
-  });
+  // Build the full sandboxed command via the runtime
+  const fullCommand = runtime.buildCommand(runtimeOpts, command);
 
-  // The full command: nono run [...] -- sh -c 'cd <worktree> && exec <command>'
-  // nono's --workdir only affects profile $WORKDIR expansion, not the actual CWD.
-  // We wrap the command in a shell that cd's into the worktree first.
-  const innerCmd = command
-    .map((arg) => `'${arg.replace(/'/g, "'\\''")}'`)
-    .join(" ");
-  const fullCommand = [...nonoArgs, "sh", "-c", `cd '${worktreePath.replace(/'/g, "'\\''")}' && exec ${innerCmd}`];
-
-  const nonoCmd = fullCommand
+  const escapedCmd = fullCommand
     .map((arg) => `'${arg.replace(/'/g, "'\\''")}'`)
     .join(" ");
 
@@ -100,7 +91,7 @@ export async function launchSandbox(options: SandboxOptions): Promise<SandboxSes
     .map(([k, v]) => `export ${k}='${v.replace(/'/g, "'\\''")}'`)
     .join("; ");
 
-  const preamble = `${envExports}; unset CLAUDECODE; exec ${nonoCmd}`;
+  const preamble = `${envExports}; unset CLAUDECODE; exec ${escapedCmd}`;
 
   // Create tmux session with a clean environment (env -i).
   // The preamble re-exports only the allowed vars.
@@ -146,6 +137,7 @@ export async function launchSandbox(options: SandboxOptions): Promise<SandboxSes
       await Bun.spawn([
         "tmux", "kill-session", "-t", sessionName,
       ], { stdout: "pipe", stderr: "pipe" }).exited;
+      cleanup();
     },
   };
 }

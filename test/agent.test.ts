@@ -5,6 +5,7 @@ import { startAgent, waitForCompletion, getAgentOutput, destroyAgent, deleteTask
 import type { AgentHandle, AgentStatus } from "../src/agent";
 import { dataDir } from "../src/task";
 import { DEFAULT_CONFIG } from "../src/config";
+import { nonoRuntime } from "../src/sandbox/index";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -56,6 +57,7 @@ describe("agent lifecycle", () => {
       prompt: "echo hello",
       baseBranch: "main",
       config: testConfig,
+      runtime: nonoRuntime,
       onStatus: (s) => statuses.push(s),
     });
     handles.push(handle);
@@ -78,6 +80,7 @@ describe("agent lifecycle", () => {
       prompt: "test",
       baseBranch: "main",
       config: testConfig,
+      runtime: nonoRuntime,
     });
     handles.push(handle);
 
@@ -105,6 +108,7 @@ describe("agent lifecycle", () => {
       prompt: "test",
       baseBranch: "main",
       config: testConfig,
+      runtime: nonoRuntime,
     });
     handles.push(handle);
 
@@ -125,6 +129,7 @@ describe("agent lifecycle", () => {
       prompt: "test",
       baseBranch: "main",
       config: testConfig,
+      runtime: nonoRuntime,
     });
 
     await destroyAgent(handle, repo);
@@ -152,6 +157,7 @@ describe("agent lifecycle", () => {
       prompt: "test",
       baseBranch: "main",
       config: testConfig,
+      runtime: nonoRuntime,
     });
 
     await deleteTask(handle.taskId, repo, handle);
@@ -183,6 +189,7 @@ describe("agent lifecycle", () => {
       prompt: "test",
       baseBranch: "main",
       config: testConfig,
+      runtime: nonoRuntime,
     });
 
     // Simulate the "no handle" case — deleteTask should still clean everything up
@@ -215,6 +222,7 @@ describe("agent lifecycle", () => {
       prompt: "sleep 60",
       baseBranch: "main",
       config: testConfig,
+      runtime: nonoRuntime,
     });
     handles.push(handle);
 

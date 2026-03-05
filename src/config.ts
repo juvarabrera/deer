@@ -16,6 +16,13 @@ export interface DeerConfig {
   };
   sandbox: {
     /**
+     * Sandbox runtime to use for process isolation.
+     * - "bwrap" — bubblewrap mount namespaces + CONNECT proxy
+     * - "nono" — Landlock-based (disabled pending nono#220)
+     * @default "bwrap"
+     */
+    runtime: "bwrap" | "nono";
+    /**
      * Environment variable names to forward from the host into the sandbox.
      * Only these vars (plus PATH, HOME, TERM) reach the sandboxed process.
      * @default ["CLAUDE_CODE_OAUTH_TOKEN", "GH_TOKEN"]
@@ -42,6 +49,9 @@ export const DEFAULT_CONFIG: DeerConfig = {
     ],
   },
   sandbox: {
+    // Using bwrap until nono#220 is resolved (Landlock inode issue with
+    // ~/.claude.json backup files causes intermittent EACCES errors).
+    runtime: "bwrap",
     envPassthrough: [
       "CLAUDE_CODE_OAUTH_TOKEN",
     ],
@@ -192,6 +202,7 @@ function tomlToConfig(toml: Record<string, unknown>): Partial<DeerConfig> {
   const sandbox = toml.sandbox as Record<string, unknown> | undefined;
   if (sandbox) {
     result.sandbox = {
+      ...(sandbox.runtime !== undefined && { runtime: sandbox.runtime }),
       ...(sandbox.env_passthrough !== undefined && { envPassthrough: sandbox.env_passthrough }),
     };
   }

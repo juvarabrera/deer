@@ -1,5 +1,5 @@
 import { test, expect, describe, afterEach } from "bun:test";
-import { buildNonoArgs } from "../../src/sandbox/nono";
+import { nonoRuntime } from "../../src/sandbox/nono";
 import { mkdtemp, rm, writeFile, readFile, symlink, cp } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -27,12 +27,11 @@ function nonoRun(
   cmd: string,
   extraOpts?: { extraReadPaths?: string[]; extraWritePaths?: string[] },
 ): ReturnType<typeof Bun.spawn> {
-  const args = buildNonoArgs({
-    worktreePath: dir,
-    allowlist: [],
-    ...extraOpts,
-  });
-  return Bun.spawn([...args, "sh", "-c", cmd], {
+  const args = nonoRuntime.buildCommand(
+    { worktreePath: dir, allowlist: [], ...extraOpts },
+    ["sh", "-c", cmd],
+  );
+  return Bun.spawn(args, {
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -137,16 +136,12 @@ describe("write isolation", () => {
   test("repoGitDir is not writable", async () => {
     const dir = await makeTmpDir();
 
-    const args = buildNonoArgs({
-      worktreePath: dir,
-      allowlist: [],
-      repoGitDir: "/usr",
-    });
-
-    const proc = Bun.spawn(
-      [...args, "sh", "-c", "echo pwned > /usr/deer-escape-test; echo exit=$?"],
-      { stdout: "pipe", stderr: "pipe" },
+    const args = nonoRuntime.buildCommand(
+      { worktreePath: dir, allowlist: [], repoGitDir: "/usr" },
+      ["sh", "-c", "echo pwned > /usr/deer-escape-test; echo exit=$?"],
     );
+
+    const proc = Bun.spawn(args, { stdout: "pipe", stderr: "pipe" });
     const stdout = await new Response(proc.stdout).text();
     await proc.exited;
 
@@ -279,10 +274,10 @@ describe("sensitive credential file isolation", () => {
 describe("env passthrough isolation", () => {
   test("only explicitly passthrough'd env vars reach the sandbox", async () => {
     const dir = await makeTmpDir();
-    const args = buildNonoArgs({
-      worktreePath: dir,
-      allowlist: [],
-    });
+    const args = nonoRuntime.buildCommand(
+      { worktreePath: dir, allowlist: [] },
+      ["sh", "-c", "cat /proc/self/environ | tr '\\0' '\\n' | sort"],
+    );
 
     // launchSandbox builds a clean env from the passthrough list.
     // Simulate by spawning with env -i plus only allowed vars.
@@ -293,18 +288,11 @@ describe("env passthrough isolation", () => {
       GH_TOKEN: "ghp_allowed_token",
     };
 
-    const proc = Bun.spawn(
-      [
-        ...args,
-        "sh", "-c",
-        "cat /proc/self/environ | tr '\\0' '\\n' | sort",
-      ],
-      {
-        stdout: "pipe",
-        stderr: "pipe",
-        env: allowedEnv,
-      },
-    );
+    const proc = Bun.spawn(args, {
+      stdout: "pipe",
+      stderr: "pipe",
+      env: allowedEnv,
+    });
     const stdout = await new Response(proc.stdout).text();
     await proc.exited;
 

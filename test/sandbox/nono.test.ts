@@ -1,52 +1,57 @@
 import { test, expect, describe, afterEach } from "bun:test";
-import { buildNonoArgs, type NonoOptions } from "../../src/sandbox/nono";
+import { nonoRuntime } from "../../src/sandbox/nono";
+import type { SandboxRuntimeOptions } from "../../src/sandbox/runtime";
 import { mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-describe("buildNonoArgs", () => {
-  const defaults: NonoOptions = {
+describe("nonoRuntime.buildCommand", () => {
+  const defaults: SandboxRuntimeOptions = {
     worktreePath: "/home/user/project",
     allowlist: ["api.anthropic.com", "github.com"],
   };
 
+  function buildArgs(opts = defaults) {
+    return nonoRuntime.buildCommand(opts, ["echo", "test"]);
+  }
+
   test("returns nono as first arg", () => {
-    const args = buildNonoArgs(defaults);
+    const args = buildArgs();
     expect(args[0]).toBe("nono");
     expect(args[1]).toBe("run");
   });
 
   test("includes --silent flag", () => {
-    const args = buildNonoArgs(defaults);
+    const args = buildArgs();
     expect(args).toContain("--silent");
   });
 
   test("uses claude-code profile", () => {
-    const args = buildNonoArgs(defaults);
+    const args = buildArgs();
     const idx = args.indexOf("--profile");
     expect(idx).toBeGreaterThan(0);
     expect(args[idx + 1]).toBe("claude-code");
   });
 
   test("grants read-write access to worktree", () => {
-    const args = buildNonoArgs(defaults);
+    const args = buildArgs();
     const idx = args.indexOf("--allow");
     expect(idx).toBeGreaterThan(0);
     expect(args[idx + 1]).toBe(defaults.worktreePath);
   });
 
   test("does not include --workdir (nono v0.10.0 bug)", () => {
-    const args = buildNonoArgs(defaults);
+    const args = buildArgs();
     expect(args).not.toContain("--workdir");
   });
 
   test("includes --allow-cwd", () => {
-    const args = buildNonoArgs(defaults);
+    const args = buildArgs();
     expect(args).toContain("--allow-cwd");
   });
 
   test("adds --proxy-allow for each allowlist entry", () => {
-    const args = buildNonoArgs(defaults);
+    const args = buildArgs();
     const proxyAllows = args.reduce<string[]>((acc, arg, i) => {
       if (arg === "--proxy-allow") acc.push(args[i + 1]);
       return acc;
@@ -56,7 +61,7 @@ describe("buildNonoArgs", () => {
   });
 
   test("adds --read for repoGitDir when provided and exists", () => {
-    const args = buildNonoArgs({
+    const args = buildArgs({
       ...defaults,
       repoGitDir: "/usr", // use /usr as a path that exists
     });
@@ -68,7 +73,7 @@ describe("buildNonoArgs", () => {
   });
 
   test("skips repoGitDir when path does not exist", () => {
-    const args = buildNonoArgs({
+    const args = buildArgs({
       ...defaults,
       repoGitDir: "/nonexistent-repo-git-dir-xyz",
     });
@@ -76,7 +81,7 @@ describe("buildNonoArgs", () => {
   });
 
   test("adds extra read paths", () => {
-    const args = buildNonoArgs({
+    const args = buildArgs({
       ...defaults,
       extraReadPaths: ["/usr/share", "/nonexistent-path-xyz"],
     });
@@ -89,7 +94,7 @@ describe("buildNonoArgs", () => {
   });
 
   test("adds extra write paths", () => {
-    const args = buildNonoArgs({
+    const args = buildArgs({
       ...defaults,
       extraWritePaths: ["/tmp"],
     });
@@ -101,9 +106,20 @@ describe("buildNonoArgs", () => {
     expect(allows).toContain("/tmp");
   });
 
-  test("ends with -- separator", () => {
-    const args = buildNonoArgs(defaults);
-    expect(args[args.length - 1]).toBe("--");
+  test("includes -- separator before inner command", () => {
+    const args = buildArgs();
+    expect(args).toContain("--");
+    const sepIdx = args.indexOf("--");
+    // After --, the command is: sh -c 'cd ... && exec ...'
+    expect(args[sepIdx + 1]).toBe("sh");
+    expect(args[sepIdx + 2]).toBe("-c");
+  });
+
+  test("wraps inner command in cd + exec", () => {
+    const args = nonoRuntime.buildCommand(defaults, ["claude", "--model", "sonnet"]);
+    const shCmd = args[args.length - 1];
+    expect(shCmd).toContain("cd '/home/user/project'");
+    expect(shCmd).toContain("exec 'claude' '--model' 'sonnet'");
   });
 });
 
@@ -127,12 +143,12 @@ describe("nono integration", () => {
     const dir = await makeTmpDir();
     await writeFile(join(dir, "test.txt"), "hello");
 
-    const args = buildNonoArgs({
-      worktreePath: dir,
-      allowlist: [],
-    });
+    const args = nonoRuntime.buildCommand(
+      { worktreePath: dir, allowlist: [] },
+      ["cat", join(dir, "test.txt")],
+    );
 
-    const proc = Bun.spawn([...args, "cat", join(dir, "test.txt")], {
+    const proc = Bun.spawn(args, {
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -145,12 +161,12 @@ describe("nono integration", () => {
 
   test("nono can write files inside the worktree", async () => {
     const dir = await makeTmpDir();
-    const args = buildNonoArgs({
-      worktreePath: dir,
-      allowlist: [],
-    });
+    const args = nonoRuntime.buildCommand(
+      { worktreePath: dir, allowlist: [] },
+      ["sh", "-c", `echo "written" > ${dir}/output.txt`],
+    );
 
-    const proc = Bun.spawn([...args, "sh", "-c", `echo "written" > ${dir}/output.txt`], {
+    const proc = Bun.spawn(args, {
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -162,17 +178,12 @@ describe("nono integration", () => {
 
   test("nono blocks direct network access when using proxy", async () => {
     const dir = await makeTmpDir();
-    const args = buildNonoArgs({
-      worktreePath: dir,
-      allowlist: ["example.com"],
-    });
+    const args = nonoRuntime.buildCommand(
+      { worktreePath: dir, allowlist: ["example.com"] },
+      ["sh", "-c", `curl --noproxy '*' --max-time 3 -s https://example.com > ${dir}/out.txt 2>&1 || echo "BLOCKED" > ${dir}/out.txt`],
+    );
 
-    // curl --noproxy bypasses HTTP_PROXY — should fail with Landlock TCP restriction
-    const proc = Bun.spawn([
-      ...args,
-      "sh", "-c",
-      `curl --noproxy '*' --max-time 3 -s https://example.com > ${dir}/out.txt 2>&1 || echo "BLOCKED" > ${dir}/out.txt`,
-    ], {
+    const proc = Bun.spawn(args, {
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -184,16 +195,12 @@ describe("nono integration", () => {
 
   test("nono allows proxied access to allowlisted hosts", async () => {
     const dir = await makeTmpDir();
-    const args = buildNonoArgs({
-      worktreePath: dir,
-      allowlist: ["example.com"],
-    });
+    const args = nonoRuntime.buildCommand(
+      { worktreePath: dir, allowlist: ["example.com"] },
+      ["sh", "-c", `curl -s --max-time 5 https://example.com > ${dir}/out.txt 2>&1`],
+    );
 
-    const proc = Bun.spawn([
-      ...args,
-      "sh", "-c",
-      `curl -s --max-time 5 https://example.com > ${dir}/out.txt 2>&1`,
-    ], {
+    const proc = Bun.spawn(args, {
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -205,12 +212,12 @@ describe("nono integration", () => {
 
   test("nono passes environment variables", async () => {
     const dir = await makeTmpDir();
-    const args = buildNonoArgs({
-      worktreePath: dir,
-      allowlist: [],
-    });
+    const args = nonoRuntime.buildCommand(
+      { worktreePath: dir, allowlist: [] },
+      ["sh", "-c", "echo $MY_VAR"],
+    );
 
-    const proc = Bun.spawn([...args, "sh", "-c", "echo $MY_VAR"], {
+    const proc = Bun.spawn(args, {
       stdout: "pipe",
       stderr: "pipe",
       env: { ...process.env, MY_VAR: "deer_test_value" },

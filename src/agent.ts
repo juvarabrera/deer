@@ -10,7 +10,7 @@ import { createWorktree, removeWorktree } from "./git/worktree";
 import { createPullRequest, cleanupWorktree } from "./git/finalize";
 import type { CreatePRResult } from "./git/finalize";
 import { launchSandbox, isTmuxSessionDead, captureTmuxPane } from "./sandbox/index";
-import type { SandboxSession } from "./sandbox/index";
+import type { SandboxSession, SandboxRuntime } from "./sandbox/index";
 import { generateTaskId, dataDir } from "./task";
 import type { DeerConfig } from "./config";
 
@@ -36,6 +36,8 @@ export interface AgentRunOptions {
   config: DeerConfig;
   /** Override the model (default: "sonnet") */
   model?: string;
+  /** Sandbox runtime to use for isolation */
+  runtime: SandboxRuntime;
   /** Callback for status updates */
   onStatus?: (status: AgentStatus) => void;
 }
@@ -111,6 +113,7 @@ export async function startAgent(options: AgentRunOptions): Promise<AgentHandle>
     baseBranch,
     config,
     model = DEFAULT_MODEL,
+    runtime,
     onStatus,
   } = options;
 
@@ -150,6 +153,7 @@ export async function startAgent(options: AgentRunOptions): Promise<AgentHandle>
       allowlist: config.network.allowlist,
       env: buildPassthroughEnv(config.sandbox.envPassthrough),
       command: claudeCmd,
+      runtime,
     });
   } catch (err) {
     // Clean up worktree on sandbox failure

@@ -3,6 +3,7 @@ import {
   launchSandbox,
   isTmuxSessionDead,
   captureTmuxPane,
+  nonoRuntime,
   type SandboxSession,
 } from "../../src/sandbox/index";
 import { mkdtemp, rm, readFile } from "node:fs/promises";
@@ -42,6 +43,7 @@ describe("sandbox integration", () => {
       sessionName: name,
       worktreePath: dir,
       allowlist: [],
+      runtime: nonoRuntime,
       command: ["sh", "-c", `echo "sandbox works" > ${dir}/result.txt`],
     });
     sessions.push(session);
@@ -63,6 +65,7 @@ describe("sandbox integration", () => {
       sessionName: name,
       worktreePath: dir,
       allowlist: [],
+      runtime: nonoRuntime,
       command: ["sleep", "30"],
     });
     sessions.push(session);
@@ -81,6 +84,7 @@ describe("sandbox integration", () => {
       sessionName: name,
       worktreePath: dir,
       allowlist: [],
+      runtime: nonoRuntime,
       command: ["true"], // exits immediately
     });
     sessions.push(session);
@@ -104,6 +108,7 @@ describe("sandbox integration", () => {
       sessionName: name,
       worktreePath: dir,
       allowlist: [],
+      runtime: nonoRuntime,
       command: ["echo", "hello from sandbox"],
     });
     sessions.push(session);
@@ -129,6 +134,7 @@ describe("sandbox integration", () => {
       sessionName: name,
       worktreePath: dir,
       allowlist: [],
+      runtime: nonoRuntime,
       command: ["sleep", "60"],
     });
 
@@ -148,6 +154,7 @@ describe("sandbox integration", () => {
       sessionName: name,
       worktreePath: dir,
       allowlist: [],
+      runtime: nonoRuntime,
       command: ["sh", "-c", `echo "inside" > ${dir}/sandboxed.txt`],
     });
     sessions.push(session);
@@ -166,6 +173,7 @@ describe("sandbox integration", () => {
       worktreePath: dir,
       allowlist: [],
       env: { DEER_TEST_VAR: "it_works" },
+      runtime: nonoRuntime,
       command: ["sh", "-c", `echo $DEER_TEST_VAR > ${dir}/env-result.txt`],
     });
     sessions.push(session);
@@ -184,6 +192,7 @@ describe("sandbox integration", () => {
       sessionName: name,
       worktreePath: dir,
       allowlist: ["example.com"],
+      runtime: nonoRuntime,
       command: [
         "sh", "-c",
         // curl --noproxy bypasses HTTP_PROXY — should fail with Landlock TCP

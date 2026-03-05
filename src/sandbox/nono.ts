@@ -1,22 +1,6 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-
-export interface NonoOptions {
-  /** The worktree directory — mounted read-write */
-  worktreePath: string;
-  /**
-   * Path to the main repo's `.git/` directory.
-   * Mounted read-only so git worktree operations work inside the sandbox.
-   * @example "/home/user/project/.git"
-   */
-  repoGitDir?: string;
-  /** Hosts to allow through the network proxy */
-  allowlist: string[];
-  /** Additional paths to grant read-only access */
-  extraReadPaths?: string[];
-  /** Additional paths to grant read-write access */
-  extraWritePaths?: string[];
-}
+import type { SandboxRuntime, SandboxRuntimeOptions, SandboxCleanup } from "./runtime";
 
 /**
  * Path to the nono binary.
@@ -25,72 +9,82 @@ export interface NonoOptions {
 const NONO_BIN = "nono";
 
 /**
- * Build the argument array for a nono invocation.
+ * nono sandbox runtime (Landlock-based).
  *
- * The sandbox:
- * - Grants read-write access to the worktree (the working directory)
- * - Uses the claude-code network profile as a base
- * - Adds custom allowlist entries via --proxy-allow
- * - Grants read access to the repo's .git/ directory
- * - Runs in silent mode (no banner) with --exec for TTY passthrough
+ * Uses the claude-code profile as a base and adds per-task capabilities.
+ * Requires Linux kernel 5.13+ for basic Landlock, 6.7+ for TCP filtering.
+ *
+ * Known limitation: Claude Code creates ~/.claude.json.backup.<timestamp>
+ * files during config saves. Landlock's inode-based rules can't grant
+ * MAKE_REG on $HOME for new files, causing intermittent EACCES errors.
+ * Tracked upstream: https://github.com/always-further/nono/issues/220
  */
-export function buildNonoArgs(options: NonoOptions): string[] {
-  const { worktreePath, repoGitDir, allowlist, extraReadPaths, extraWritePaths } = options;
+export const nonoRuntime: SandboxRuntime = {
+  name: "nono",
 
-  const home = process.env.HOME ?? "/root";
+  async prepare(): Promise<SandboxCleanup> {
+    // Pre-create ~/.claude.json.lock so Landlock can attach a rule to it.
+    // Claude Code's saveConfigWithLock creates this file; without it,
+    // Landlock blocks creation (no MAKE_REG on ~/). See nono#220.
+    const lockFile = join(process.env.HOME ?? "/root", ".claude.json.lock");
+    await Bun.write(lockFile, "").catch(() => {});
+    return () => {};
+  },
 
-  const args: string[] = [
-    NONO_BIN,
-    "run",
-    "--silent",
-    // Use claude-code profile as base (includes system paths, dev tools,
-    // ~/.claude rw, git config, etc.)
-    "--profile", "claude-code",
-    // Grant read-write to the worktree
-    "--allow", worktreePath,
-    // Required in --silent mode to avoid interactive CWD prompt
-    "--allow-cwd",
-    // WORKAROUND: Grant write-only access to $HOME. Claude Code creates
-    // ~/.claude.json.backup.<timestamp> files during config saves, and
-    // Landlock blocks new file creation in $HOME since the claude-code
-    // profile only grants inode-level rw to ~/.claude.json itself.
-    // Additionally, atomic writes can change the inode, orphaning the
-    // Landlock rule entirely. --write (not --allow) is used so this
-    // only grants write/create — not read access to $HOME contents.
-    // Tracked upstream: https://github.com/always-further/nono/issues/220
-    "--write", home,
-  ];
+  buildCommand(options: SandboxRuntimeOptions, innerCommand: string[]): string[] {
+    const { worktreePath, repoGitDir, allowlist, extraReadPaths, extraWritePaths } = options;
 
-  // Network allowlist — each host gets a --proxy-allow flag
-  for (const host of allowlist) {
-    args.push("--proxy-allow", host);
-  }
+    const args: string[] = [
+      NONO_BIN,
+      "run",
+      "--silent",
+      // Use claude-code profile as base (includes system paths, dev tools,
+      // ~/.claude rw, git config, etc.)
+      "--profile", "claude-code",
+      // Grant read-write to the worktree
+      "--allow", worktreePath,
+      // Required in --silent mode to avoid interactive CWD prompt
+      "--allow-cwd",
+    ];
 
-  // Repo .git/ directory — needed for git worktree operations
-  if (repoGitDir && existsSync(repoGitDir)) {
-    args.push("--read", repoGitDir);
-  }
+    // Network allowlist — each host gets a --proxy-allow flag
+    for (const host of allowlist) {
+      args.push("--proxy-allow", host);
+    }
 
-  // Extra read-only paths
-  if (extraReadPaths) {
-    for (const path of extraReadPaths) {
-      if (existsSync(path)) {
-        args.push("--read", path);
+    // Repo .git/ directory — needed for git worktree operations
+    if (repoGitDir && existsSync(repoGitDir)) {
+      args.push("--read", repoGitDir);
+    }
+
+    // Extra read-only paths
+    if (extraReadPaths) {
+      for (const path of extraReadPaths) {
+        if (existsSync(path)) {
+          args.push("--read", path);
+        }
       }
     }
-  }
 
-  // Extra read-write paths
-  if (extraWritePaths) {
-    for (const path of extraWritePaths) {
-      if (existsSync(path)) {
-        args.push("--allow", path);
+    // Extra read-write paths
+    if (extraWritePaths) {
+      for (const path of extraWritePaths) {
+        if (existsSync(path)) {
+          args.push("--allow", path);
+        }
       }
     }
-  }
 
-  // Separator between nono args and the command
-  args.push("--");
+    // Separator between nono args and the command
+    args.push("--");
 
-  return args;
-}
+    // nono's --workdir only affects profile $WORKDIR expansion, not the actual CWD.
+    // Wrap the command in a shell that cd's into the worktree first.
+    const escapedInner = innerCommand
+      .map((arg) => `'${arg.replace(/'/g, "'\\''")}'`)
+      .join(" ");
+    args.push("sh", "-c", `cd '${worktreePath.replace(/'/g, "'\\''")}' && exec ${escapedInner}`);
+
+    return args;
+  },
+};
