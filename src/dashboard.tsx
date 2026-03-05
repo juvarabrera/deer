@@ -218,11 +218,11 @@ function PromptInput({
   const [value, setValue] = useState(defaultValue);
   const [cursorOffset, setCursorOffset] = useState(defaultValue.length);
 
-  // Refs to avoid stale closures in the raw stdin listener below.
+  // Refs kept in sync with state for use in event handlers to avoid stale closures.
   const valueRef = useRef(value);
   const cursorOffsetRef = useRef(cursorOffset);
-  useEffect(() => { valueRef.current = value; }, [value]);
-  useEffect(() => { cursorOffsetRef.current = cursorOffset; }, [cursorOffset]);
+  valueRef.current = value;
+  cursorOffsetRef.current = cursorOffset;
 
   // Handle Shift+Enter via the Kitty keyboard protocol escape sequence (\x1b[13;2u).
   // Standard terminals send the same \r byte for Enter and Shift+Enter, so Ink's
@@ -234,8 +234,12 @@ function PromptInput({
       if (data.toString() === "\x1b[13;2u") {
         const cur = cursorOffsetRef.current;
         const val = valueRef.current;
-        setValue(val.slice(0, cur) + "\n" + val.slice(cur));
-        setCursorOffset(cur + 1);
+        const newValue = val.slice(0, cur) + "\n" + val.slice(cur);
+        const newCursor = cur + 1;
+        valueRef.current = newValue;
+        cursorOffsetRef.current = newCursor;
+        setValue(newValue);
+        setCursorOffset(newCursor);
       }
     };
     process.stdin.on("data", handleData);
@@ -256,29 +260,48 @@ function PromptInput({
 
       if (key.return) {
         if (key.shift) {
-          const newValue = value.slice(0, cursorOffset) + "\n" + value.slice(cursorOffset);
+          const cur = cursorOffsetRef.current;
+          const val = valueRef.current;
+          const newValue = val.slice(0, cur) + "\n" + val.slice(cur);
+          const newCursor = cur + 1;
+          valueRef.current = newValue;
+          cursorOffsetRef.current = newCursor;
           setValue(newValue);
-          setCursorOffset((prev) => prev + 1);
+          setCursorOffset(newCursor);
         } else {
-          onSubmit?.(value);
+          onSubmit?.(valueRef.current);
         }
         return;
       }
 
       if (key.leftArrow) {
-        setCursorOffset((prev) => Math.max(0, prev - 1));
+        const newCursor = Math.max(0, cursorOffsetRef.current - 1);
+        cursorOffsetRef.current = newCursor;
+        setCursorOffset(newCursor);
       } else if (key.rightArrow) {
-        setCursorOffset((prev) => Math.min(value.length, prev + 1));
+        const newCursor = Math.min(valueRef.current.length, cursorOffsetRef.current + 1);
+        cursorOffsetRef.current = newCursor;
+        setCursorOffset(newCursor);
       } else if (key.backspace || key.delete) {
-        if (cursorOffset > 0) {
-          const newValue = value.slice(0, cursorOffset - 1) + value.slice(cursorOffset);
+        const cur = cursorOffsetRef.current;
+        if (cur > 0) {
+          const val = valueRef.current;
+          const newValue = val.slice(0, cur - 1) + val.slice(cur);
+          const newCursor = cur - 1;
+          valueRef.current = newValue;
+          cursorOffsetRef.current = newCursor;
           setValue(newValue);
-          setCursorOffset((prev) => prev - 1);
+          setCursorOffset(newCursor);
         }
       } else if (input) {
-        const newValue = value.slice(0, cursorOffset) + input + value.slice(cursorOffset);
+        const cur = cursorOffsetRef.current;
+        const val = valueRef.current;
+        const newValue = val.slice(0, cur) + input + val.slice(cur);
+        const newCursor = cur + input.length;
+        valueRef.current = newValue;
+        cursorOffsetRef.current = newCursor;
         setValue(newValue);
-        setCursorOffset((prev) => prev + 1);
+        setCursorOffset(newCursor);
       }
     },
     { isActive: !isDisabled },
