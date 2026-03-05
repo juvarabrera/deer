@@ -23,6 +23,11 @@ interface PRMetadata {
   body: string;
 }
 
+export function ensureDeerEmojiPrefix(title: string): string {
+  if (title.startsWith("🦌 ")) return title;
+  return `🦌 ${title}`;
+}
+
 /**
  * Ask Claude to generate PR metadata (branch name, title, body) from the diff.
  * Falls back to a simple prompt-based title if Claude fails.
@@ -85,12 +90,12 @@ ${truncatedDiff}`;
 
     return {
       branchName: parsed.branchName.replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, ""),
-      title: parsed.title.slice(0, 70),
+      title: ensureDeerEmojiPrefix(parsed.title.slice(0, 70)),
       body: parsed.body,
     };
   } catch {
     const clean = prompt.replace(/\n/g, " ").trim();
-    const title = clean.length > 65 ? clean.slice(0, 62) + "..." : clean;
+    const title = ensureDeerEmojiPrefix(clean.length > 65 ? clean.slice(0, 62) + "..." : clean);
     const body = [
       "## Summary",
       "",
