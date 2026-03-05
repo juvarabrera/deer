@@ -301,6 +301,30 @@ function PromptInput({
   const [value, setValue] = useState(defaultValue);
   const [cursorOffset, setCursorOffset] = useState(defaultValue.length);
 
+  // Refs to avoid stale closures in the raw stdin listener below.
+  const valueRef = useRef(value);
+  const cursorOffsetRef = useRef(cursorOffset);
+  useEffect(() => { valueRef.current = value; }, [value]);
+  useEffect(() => { cursorOffsetRef.current = cursorOffset; }, [cursorOffset]);
+
+  // Handle Shift+Enter via the Kitty keyboard protocol escape sequence (\x1b[13;2u).
+  // Standard terminals send the same \r byte for Enter and Shift+Enter, so Ink's
+  // useInput cannot distinguish them. Terminals supporting the Kitty protocol
+  // (kitty, WezTerm, foot, etc.) send a distinct sequence that we intercept here.
+  useEffect(() => {
+    if (isDisabled) return;
+    const handleData = (data: Buffer) => {
+      if (data.toString() === "\x1b[13;2u") {
+        const cur = cursorOffsetRef.current;
+        const val = valueRef.current;
+        setValue(val.slice(0, cur) + "\n" + val.slice(cur));
+        setCursorOffset(cur + 1);
+      }
+    };
+    process.stdin.on("data", handleData);
+    return () => { process.stdin.off("data", handleData); };
+  }, [isDisabled]);
+
   useInput(
     (input, key) => {
       if (
