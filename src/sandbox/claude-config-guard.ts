@@ -50,9 +50,6 @@ function claudeDir(): string {
   return join(process.env.HOME ?? "", ".claude");
 }
 
-function claudeJsonPath(): string {
-  return join(process.env.HOME ?? "", ".claude.json");
-}
 
 const WATCHED: WatchedEntry[] = [
   {
@@ -132,22 +129,19 @@ async function hashDir(dirPath: string): Promise<Map<string, string>> {
 interface Snapshot {
   /** Resolved paths at snapshot time */
   claudeDirPath: string;
-  claudeJsonFilePath: string;
   files: Map<string, string>; // relative path -> hash
   dirs: Map<string, Map<string, string>>; // dir name -> (filename -> hash)
-  claudeJson: string | null;
 }
 
 async function takeSnapshot(): Promise<Snapshot> {
   const cd = claudeDir();
-  const cjp = claudeJsonPath();
   const files = new Map<string, string>();
   const dirs = new Map<string, Map<string, string>>();
 
   const fileEntries = WATCHED.filter((w) => !w.isDir);
   const dirEntries = WATCHED.filter((w) => w.isDir);
 
-  const [fileResults, dirResults, cjHash] = await Promise.all([
+  const [fileResults, dirResults] = await Promise.all([
     Promise.all(
       fileEntries.map(async (w) => {
         const hash = await hashFile(join(cd, w.path));
@@ -160,7 +154,6 @@ async function takeSnapshot(): Promise<Snapshot> {
         return [w.path, hashes] as const;
       }),
     ),
-    hashFile(cjp),
   ]);
 
   for (const [path, hash] of fileResults) {
@@ -170,7 +163,7 @@ async function takeSnapshot(): Promise<Snapshot> {
     dirs.set(path, hashes);
   }
 
-  return { claudeDirPath: cd, claudeJsonFilePath: cjp, files, dirs, claudeJson: cjHash };
+  return { claudeDirPath: cd, files, dirs };
 }
 
 // ── Diffing ──────────────────────────────────────────────────────────
@@ -252,25 +245,6 @@ async function diffSnapshot(baseline: Snapshot): Promise<ConfigAlert[]> {
     }
   }
 
-  // Check ~/.claude.json
-  const cjp = baseline.claudeJsonFilePath;
-  if (baseline.claudeJson && !current.claudeJson) {
-    alerts.push({
-      severity: "high", file: cjp, type: "deleted",
-      description: "Deleted: ~/.claude.json config file", timestamp: now,
-    });
-  } else if (!baseline.claudeJson && current.claudeJson) {
-    alerts.push({
-      severity: "high", file: cjp, type: "created",
-      description: "Created: ~/.claude.json config file", timestamp: now,
-    });
-  } else if (baseline.claudeJson && current.claudeJson && baseline.claudeJson !== current.claudeJson) {
-    alerts.push({
-      severity: "high", file: cjp, type: "modified",
-      description: "Modified: ~/.claude.json config file", timestamp: now,
-    });
-  }
-
   return alerts;
 }
 
@@ -292,7 +266,6 @@ export async function startClaudeConfigGuard(
   const alerts: ConfigAlert[] = [];
   const watchers: FSWatcher[] = [];
   const cd = baseline.claudeDirPath;
-  const cjp = baseline.claudeJsonFilePath;
 
   // Debounce: fs.watch fires multiple events per change
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -337,14 +310,6 @@ export async function startClaudeConfigGuard(
     } catch {
       // Subdirectory might not exist
     }
-  }
-
-  // Watch ~/.claude.json
-  try {
-    const w = watch(cjp, onFsEvent);
-    watchers.push(w);
-  } catch {
-    // File might not exist
   }
 
   return {

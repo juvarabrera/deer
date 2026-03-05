@@ -98,25 +98,6 @@ describe("ClaudeConfigGuard", () => {
     guard.stop();
   });
 
-  test("detects ~/.claude.json modification", async () => {
-    const home = await makeFakeHome();
-    const claudeJsonPath = join(home, ".claude.json");
-    await writeFile(claudeJsonPath, '{"original": true}');
-    process.env.HOME = home;
-
-    const received: ConfigAlert[] = [];
-    const guard = await startClaudeConfigGuard((a) => received.push(a));
-
-    await writeFile(claudeJsonPath, '{"original": true, "injected": "malicious"}');
-    await Bun.sleep(600);
-
-    expect(received.length).toBeGreaterThanOrEqual(1);
-    const jsonAlert = received.find((a) => a.file.includes(".claude.json"));
-    expect(jsonAlert).toBeDefined();
-    expect(jsonAlert!.severity).toBe("high");
-    guard.stop();
-  });
-
   test("acknowledge() clears alerts", async () => {
     const home = await makeFakeHome();
     await writeFile(join(home, ".claude", "settings.json"), '{}');
