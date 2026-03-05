@@ -1,5 +1,5 @@
 import { test, expect, describe, afterEach } from "bun:test";
-import { generateTaskId, dataDir, historyPath, loadHistory, appendToHistory, removeFromHistory, upsertHistory } from "../src/task";
+import { generateTaskId, dataDir, historyPath, loadHistory, removeFromHistory, upsertHistory } from "../src/task";
 import type { PersistedTask } from "../src/task";
 import { rm, mkdtemp } from "node:fs/promises";
 import { join } from "node:path";
@@ -111,11 +111,11 @@ describe("history persistence", () => {
     expect(result).toEqual([]);
   });
 
-  test("appendToHistory + loadHistory roundtrip", async () => {
+  test("upsertHistory + loadHistory roundtrip", async () => {
     const repoPath = makeFakeDataDir();
     const task = makeTask();
 
-    await appendToHistory(repoPath, task);
+    await upsertHistory(repoPath, task);
     const loaded = await loadHistory(repoPath);
 
     expect(loaded).toHaveLength(1);
@@ -127,9 +127,9 @@ describe("history persistence", () => {
   test("multiple appends accumulate", async () => {
     const repoPath = makeFakeDataDir();
 
-    await appendToHistory(repoPath, makeTask({ prompt: "task 1" }));
-    await appendToHistory(repoPath, makeTask({ prompt: "task 2" }));
-    await appendToHistory(repoPath, makeTask({ prompt: "task 3" }));
+    await upsertHistory(repoPath, makeTask({ prompt: "task 1" }));
+    await upsertHistory(repoPath, makeTask({ prompt: "task 2" }));
+    await upsertHistory(repoPath, makeTask({ prompt: "task 3" }));
 
     const loaded = await loadHistory(repoPath);
     expect(loaded).toHaveLength(3);
@@ -144,7 +144,7 @@ describe("history persistence", () => {
       prUrl: null,
     });
 
-    await appendToHistory(repoPath, task);
+    await upsertHistory(repoPath, task);
     const loaded = await loadHistory(repoPath);
 
     expect(loaded[0].status).toBe("failed");
@@ -155,8 +155,8 @@ describe("history persistence", () => {
     const repoA = makeFakeDataDir();
     const repoB = makeFakeDataDir();
 
-    await appendToHistory(repoA, makeTask({ prompt: "task A" }));
-    await appendToHistory(repoB, makeTask({ prompt: "task B" }));
+    await upsertHistory(repoA, makeTask({ prompt: "task A" }));
+    await upsertHistory(repoB, makeTask({ prompt: "task B" }));
 
     const loadedA = await loadHistory(repoA);
     const loadedB = await loadHistory(repoB);
@@ -173,9 +173,9 @@ describe("history persistence", () => {
     const task2 = makeTask({ prompt: "task 2" });
     const task3 = makeTask({ prompt: "task 3" });
 
-    await appendToHistory(repoPath, task1);
-    await appendToHistory(repoPath, task2);
-    await appendToHistory(repoPath, task3);
+    await upsertHistory(repoPath, task1);
+    await upsertHistory(repoPath, task2);
+    await upsertHistory(repoPath, task3);
 
     await removeFromHistory(repoPath, task2.taskId);
     const loaded = await loadHistory(repoPath);
@@ -188,7 +188,7 @@ describe("history persistence", () => {
     const repoPath = makeFakeDataDir();
     const task = makeTask({ prompt: "keep me" });
 
-    await appendToHistory(repoPath, task);
+    await upsertHistory(repoPath, task);
     await removeFromHistory(repoPath, "deer_nonexistent");
 
     const loaded = await loadHistory(repoPath);
@@ -247,9 +247,9 @@ describe("history persistence", () => {
     const repoPath = makeFakeDataDir();
     const taskId = generateTaskId();
 
-    await appendToHistory(repoPath, makeTask({ prompt: "task before" }));
+    await upsertHistory(repoPath, makeTask({ prompt: "task before" }));
     await upsertHistory(repoPath, makeTask({ taskId, prompt: "the task", status: "running", completedAt: null, elapsed: 0 }));
-    await appendToHistory(repoPath, makeTask({ prompt: "task after" }));
+    await upsertHistory(repoPath, makeTask({ prompt: "task after" }));
 
     // Now update the running task to completed
     await upsertHistory(repoPath, makeTask({ taskId, prompt: "the task", status: "completed" }));
