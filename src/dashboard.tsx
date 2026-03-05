@@ -226,10 +226,12 @@ function PromptInput({
 
   // Handle Shift+Enter via the Kitty keyboard protocol escape sequence (\x1b[13;2u).
   // Standard terminals send the same \r byte for Enter and Shift+Enter, so Ink's
-  // useInput cannot distinguish them. Terminals supporting the Kitty protocol
-  // (kitty, WezTerm, foot, etc.) send a distinct sequence that we intercept here.
+  // useInput cannot distinguish them. We explicitly request the Kitty keyboard
+  // protocol (\x1b[>1u) so terminals that support it (kitty, WezTerm, foot, ghostty,
+  // xterm, etc.) send the distinct sequence. On cleanup we pop the mode (\x1b[<u).
   useEffect(() => {
     if (isDisabled) return;
+    process.stdout.write("\x1b[>1u");
     const handleData = (data: Buffer) => {
       if (data.toString() === "\x1b[13;2u") {
         const cur = cursorOffsetRef.current;
@@ -243,7 +245,10 @@ function PromptInput({
       }
     };
     process.stdin.on("data", handleData);
-    return () => { process.stdin.off("data", handleData); };
+    return () => {
+      process.stdin.off("data", handleData);
+      process.stdout.write("\x1b[<u");
+    };
   }, [isDisabled]);
 
   useInput(
