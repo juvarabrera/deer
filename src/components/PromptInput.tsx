@@ -1,7 +1,6 @@
 import { Text } from "ink";
-import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import React, { useState, useRef, useMemo } from "react";
 import { useInput } from "ink";
-import { applyKittyData } from "../kitty-input";
 
 /** Text input that supports Shift+Enter or /↵ to insert newlines and Enter to submit. */
 export function PromptInput({
@@ -24,29 +23,10 @@ export function PromptInput({
   valueRef.current = value;
   cursorOffsetRef.current = cursorOffset;
 
-  // Handle Shift+Enter via the Kitty keyboard protocol escape sequence (\x1b[13;2u).
-  // Standard terminals send the same \r byte for Enter and Shift+Enter, so Ink's
-  // useInput cannot distinguish them. We explicitly request the Kitty keyboard
-  // protocol (\x1b[>1u) so terminals that support it (kitty, WezTerm, foot, ghostty,
-  // xterm, etc.) send the distinct sequence. On cleanup we pop the mode (\x1b[<u).
-  useEffect(() => {
-    if (isDisabled) return;
-    process.stdout.write("\x1b[>1u");
-    const handleData = (data: Buffer) => {
-      const result = applyKittyData(data.toString(), valueRef.current, cursorOffsetRef.current);
-      if (result) {
-        valueRef.current = result.value;
-        cursorOffsetRef.current = result.cursor;
-        setValue(result.value);
-        setCursorOffset(result.cursor);
-      }
-    };
-    process.stdin.on("data", handleData);
-    return () => {
-      process.stdin.off("data", handleData);
-      process.stdout.write("\x1b[<u");
-    };
-  }, [isDisabled]);
+  // Ink v6 handles the Kitty keyboard protocol natively — it auto-detects
+  // terminal support, enables the protocol, and parses \x1b[13;2u into
+  // key.return + key.shift. We rely on that here rather than a separate raw
+  // stdin listener, which would cause double-insertion when both fire.
 
   useInput(
     (input, key) => {
