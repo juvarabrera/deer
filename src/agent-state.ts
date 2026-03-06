@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { dataDir } from "./task";
 import type { PersistedTask } from "./task";
+import type { TaskStateFile } from "./task-state";
 import type { AgentState as AgentStatus } from "./state-machine";
 import type { AgentHandle } from "./agent";
 
@@ -96,32 +97,31 @@ export function historicalAgent(task: PersistedTask, id: number): AgentState {
 }
 
 /**
- * Convert a persisted "running" task to an AgentState for a task managed by
- * another deer instance. The tmux session is still alive, so this shows the
- * task as running and provides a handle for attaching and killing.
- *
- * @param idle - Whether the pane has been stable long enough to be considered idle
+ * Build an AgentState from a live task-state file for a task managed by
+ * another deer instance. Includes full logs, idle status, and elapsed
+ * as written by the owning instance.
  */
-export function crossInstanceAgent(task: PersistedTask, id: number, idle = false): AgentState {
-  const sessionName = `deer-${task.taskId}`;
-  const worktreePath = join(dataDir(), "tasks", task.taskId, "worktree");
-  const lastActivity = idle
-    ? "Idle — press ⏎ to attach"
-    : (task.lastActivity || "Running in another instance...");
+export function liveTaskFromStateFile(stateFile: TaskStateFile, id: number): AgentState {
+  const sessionName = `deer-${stateFile.taskId}`;
+  const worktreePath = join(dataDir(), "tasks", stateFile.taskId, "worktree");
   return createAgentState({
     id,
-    taskId: task.taskId,
-    prompt: task.prompt,
+    taskId: stateFile.taskId,
+    prompt: stateFile.prompt,
     status: "running",
-    elapsed: task.elapsed,
-    lastActivity,
-    idle,
+    elapsed: stateFile.elapsed,
+    lastActivity: stateFile.lastActivity,
+    logs: [...stateFile.logs],
+    idle: stateFile.idle,
     historical: true,
+    result: stateFile.prUrl
+      ? { finalBranch: stateFile.finalBranch ?? "", prUrl: stateFile.prUrl }
+      : null,
     handle: {
-      taskId: task.taskId,
+      taskId: stateFile.taskId,
       sessionName,
       worktreePath,
-      branch: task.finalBranch ?? `deer/${task.taskId}`,
+      branch: stateFile.finalBranch ?? `deer/${stateFile.taskId}`,
       async kill() {
         await Bun.spawn(
           ["tmux", "kill-session", "-t", sessionName],
@@ -129,5 +129,26 @@ export function crossInstanceAgent(task: PersistedTask, id: number, idle = false
         ).exited;
       },
     },
+  });
+}
+
+/**
+ * Build an AgentState from a state file whose owning process has died.
+ * Shows the task as interrupted with its last known state.
+ */
+export function historicalAgentFromStateFile(stateFile: TaskStateFile, id: number): AgentState {
+  return createAgentState({
+    id,
+    taskId: stateFile.taskId,
+    prompt: stateFile.prompt,
+    status: "interrupted",
+    elapsed: stateFile.elapsed,
+    lastActivity: "Interrupted — deer was closed",
+    logs: [...stateFile.logs],
+    result: stateFile.prUrl
+      ? { finalBranch: stateFile.finalBranch ?? "", prUrl: stateFile.prUrl }
+      : null,
+    error: stateFile.error || "",
+    historical: true,
   });
 }

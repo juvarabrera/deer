@@ -4,6 +4,8 @@ import type { AgentState } from "../agent-state";
 import { createAgentState } from "../agent-state";
 import { upsertHistory, removeFromHistory, dataDir } from "../task";
 import type { PersistedTask } from "../task";
+import { writeTaskState, removeTaskState } from "../task-state";
+import type { TaskStateFile } from "../task-state";
 import type { DeerConfig } from "../config";
 import type { PreflightResult } from "../preflight";
 import { startAgent, destroyAgent, deleteTask, createAgentPR } from "../agent";
@@ -23,6 +25,23 @@ import {
   POLL_MS,
   IDLE_THRESHOLD,
 } from "../dashboard-utils";
+
+function toTaskStateFile(agent: AgentState): TaskStateFile {
+  return {
+    taskId: agent.taskId,
+    prompt: agent.prompt,
+    status: agent.status as TaskStateFile["status"],
+    elapsed: agent.elapsed,
+    lastActivity: agent.lastActivity,
+    finalBranch: agent.result?.finalBranch ?? null,
+    prUrl: agent.result?.prUrl ?? null,
+    error: agent.error || null,
+    logs: [...agent.logs],
+    idle: agent.idle,
+    createdAt: new Date(Date.now() - agent.elapsed * 1000).toISOString(),
+    ownerPid: process.pid,
+  };
+}
 
 async function saveToHistory(agent: AgentState, repoPath: string): Promise<void> {
   if (agent.historical) return;
@@ -88,6 +107,7 @@ export function useAgentActions({
     // Start elapsed timer — pauses while agent is idle
     agent.timer = setInterval(() => {
       if (!agent.idle) agent.elapsed++;
+      if (agent.taskId) writeTaskState(toTaskStateFile(agent)).catch(() => {});
       setAgents((prev) => [...prev]);
     }, 1000);
 
@@ -118,19 +138,8 @@ export function useAgentActions({
       agent.handle = handle;
       agent.taskId = handle.taskId;
 
-      // Persist immediately so the task survives if deer closes
-      await upsertHistory(cwd, {
-        taskId: agent.taskId,
-        prompt: agent.prompt,
-        status: "running",
-        createdAt: new Date().toISOString(),
-        completedAt: null,
-        elapsed: 0,
-        prUrl: null,
-        finalBranch: null,
-        error: null,
-        lastActivity: "",
-      });
+      // Write live state file so other deer instances can observe this task
+      await writeTaskState(toTaskStateFile(agent));
 
       agent.status = transition(agent.status, "SETUP_COMPLETE") ?? agent.status;
       appendLog(agent, `[running] Claude started in tmux session: ${handle.sessionName}`);
@@ -169,19 +178,7 @@ export function useAgentActions({
               if (activity !== agent.lastActivity) {
                 agent.lastActivity = activity;
                 appendLog(agent, `[tmux] ${truncate(lastOutput, 200)}`);
-                // Persist progress so other deer instances see the current activity
-                await upsertHistory(cwd, {
-                  taskId: agent.taskId,
-                  prompt: agent.prompt,
-                  status: "running",
-                  createdAt: new Date(Date.now() - agent.elapsed * 1000).toISOString(),
-                  completedAt: null,
-                  elapsed: agent.elapsed,
-                  prUrl: null,
-                  finalBranch: null,
-                  error: null,
-                  lastActivity: agent.lastActivity,
-                });
+                await writeTaskState(toTaskStateFile(agent));
                 setAgents((prev) => [...prev]);
               }
             }
@@ -192,9 +189,11 @@ export function useAgentActions({
             agent.idle = true;
             agent.lastActivity = "Idle — press ⏎ to attach";
             appendLog(agent, "[deer] Claude is idle");
+            await writeTaskState(toTaskStateFile(agent));
             setAgents((prev) => [...prev]);
           } else if (next.unchangedCount === 0 && agent.idle) {
             agent.idle = false;
+            await writeTaskState(toTaskStateFile(agent));
             setAgents((prev) => [...prev]);
           }
         }
@@ -219,6 +218,8 @@ export function useAgentActions({
       if (!agent.deleted) {
         await saveToHistory(agent, cwd);
       }
+      // Remove the live state file — the JSONL history entry is now authoritative
+      await removeTaskState(agent.taskId).catch(() => {});
       setAgents((prev) => [...prev]);
     }
   }, [cwd, preflight]);
@@ -236,6 +237,7 @@ export function useAgentActions({
     if (agent.timer) clearInterval(agent.timer);
     agent.timer = null;
     saveToHistory(agent, cwd);
+    writeTaskState(toTaskStateFile(agent)).catch(() => {});
     setAgents((prev) => [...prev]);
   }, [cwd]);
 

@@ -1,7 +1,8 @@
 import { test, expect, describe } from "bun:test";
-import { historicalAgent, crossInstanceAgent, createAgentState } from "../src/agent-state";
+import { historicalAgent, liveTaskFromStateFile, historicalAgentFromStateFile, createAgentState } from "../src/agent-state";
 import { generateTaskId } from "../src/task";
 import type { PersistedTask } from "../src/task";
+import type { TaskStateFile } from "../src/task-state";
 import { fuzzyMatch } from "../src/fuzzy";
 
 function makeTask(overrides?: Partial<PersistedTask>): PersistedTask {
@@ -101,73 +102,118 @@ describe("historicalAgent", () => {
   });
 });
 
-describe("crossInstanceAgent", () => {
+function makeStateFile(overrides?: Partial<TaskStateFile>): TaskStateFile {
+  return {
+    taskId: generateTaskId(),
+    prompt: "fix the bug",
+    status: "running",
+    elapsed: 60,
+    lastActivity: "done",
+    finalBranch: null,
+    prUrl: null,
+    error: null,
+    logs: [],
+    idle: false,
+    createdAt: new Date().toISOString(),
+    ownerPid: process.pid,
+    ...overrides,
+  };
+}
+
+describe("liveTaskFromStateFile", () => {
   test("status is running", () => {
-    const task = makeTask({ status: "running", completedAt: null });
-    const agent = crossInstanceAgent(task, 1);
+    const agent = liveTaskFromStateFile(makeStateFile(), 1);
     expect(agent.status).toBe("running");
   });
 
   test("is marked as historical", () => {
-    const task = makeTask({ status: "running", completedAt: null });
-    const agent = crossInstanceAgent(task, 1);
+    const agent = liveTaskFromStateFile(makeStateFile(), 1);
     expect(agent.historical).toBe(true);
   });
 
   test("has a handle with correct sessionName", () => {
     const taskId = generateTaskId();
-    const task = makeTask({ taskId, status: "running", completedAt: null });
-    const agent = crossInstanceAgent(task, 1);
+    const agent = liveTaskFromStateFile(makeStateFile({ taskId }), 1);
     expect(agent.handle).not.toBeNull();
     expect(agent.handle?.sessionName).toBe(`deer-${taskId}`);
   });
 
   test("handle taskId matches task taskId", () => {
     const taskId = generateTaskId();
-    const task = makeTask({ taskId, status: "running", completedAt: null });
-    const agent = crossInstanceAgent(task, 1);
+    const agent = liveTaskFromStateFile(makeStateFile({ taskId }), 1);
     expect(agent.handle?.taskId).toBe(taskId);
   });
 
-  test("preserves lastActivity from task", () => {
-    const task = makeTask({ status: "running", completedAt: null, lastActivity: "Fixing bug..." });
-    const agent = crossInstanceAgent(task, 1);
+  test("preserves lastActivity from state file", () => {
+    const agent = liveTaskFromStateFile(makeStateFile({ lastActivity: "Fixing bug..." }), 1);
     expect(agent.lastActivity).toBe("Fixing bug...");
   });
 
-  test("uses default lastActivity when empty", () => {
-    const task = makeTask({ status: "running", completedAt: null, lastActivity: "" });
-    const agent = crossInstanceAgent(task, 1);
-    expect(agent.lastActivity.length).toBeGreaterThan(0);
-  });
-
-  test("elapsed matches task elapsed", () => {
-    const task = makeTask({ status: "running", completedAt: null, elapsed: 42 });
-    const agent = crossInstanceAgent(task, 1);
+  test("elapsed matches state file elapsed", () => {
+    const agent = liveTaskFromStateFile(makeStateFile({ elapsed: 42 }), 1);
     expect(agent.elapsed).toBe(42);
   });
 
   test("idle defaults to false", () => {
-    const task = makeTask({ status: "running", completedAt: null });
-    const agent = crossInstanceAgent(task, 1);
+    const agent = liveTaskFromStateFile(makeStateFile({ idle: false }), 1);
     expect(agent.idle).toBe(false);
   });
 
-  test("idle is set to true when passed", () => {
-    const task = makeTask({ status: "running", completedAt: null });
-    const agent = crossInstanceAgent(task, 1, true);
+  test("idle is set to true when state file has idle=true", () => {
+    const agent = liveTaskFromStateFile(makeStateFile({ idle: true }), 1);
     expect(agent.idle).toBe(true);
   });
 
-  test("lastActivity is idle message when idle=true", () => {
-    const task = makeTask({ status: "running", completedAt: null, lastActivity: "Working..." });
-    const agent = crossInstanceAgent(task, 1, true);
-    expect(agent.lastActivity).toBe("Idle — press ⏎ to attach");
+  test("carries over logs from state file", () => {
+    const logs = ["[setup] Creating worktree...", "[running] Claude started", "● Fixing the issue"];
+    const agent = liveTaskFromStateFile(makeStateFile({ logs }), 1);
+    expect(agent.logs).toEqual(logs);
   });
 
-  test("lastActivity preserved from task when not idle", () => {
-    const task = makeTask({ status: "running", completedAt: null, lastActivity: "Working..." });
-    const agent = crossInstanceAgent(task, 1, false);
-    expect(agent.lastActivity).toBe("Working...");
+  test("populates result from prUrl in state file", () => {
+    const agent = liveTaskFromStateFile(
+      makeStateFile({ prUrl: "https://github.com/org/repo/pull/42", finalBranch: "deer/task" }),
+      1,
+    );
+    expect(agent.result?.prUrl).toBe("https://github.com/org/repo/pull/42");
+    expect(agent.result?.finalBranch).toBe("deer/task");
+  });
+});
+
+describe("historicalAgentFromStateFile", () => {
+  test("status is interrupted", () => {
+    const agent = historicalAgentFromStateFile(makeStateFile(), 1);
+    expect(agent.status).toBe("interrupted");
+  });
+
+  test("is marked as historical", () => {
+    const agent = historicalAgentFromStateFile(makeStateFile(), 1);
+    expect(agent.historical).toBe(true);
+  });
+
+  test("has no handle", () => {
+    const agent = historicalAgentFromStateFile(makeStateFile(), 1);
+    expect(agent.handle).toBeNull();
+  });
+
+  test("shows interrupted lastActivity", () => {
+    const agent = historicalAgentFromStateFile(makeStateFile({ lastActivity: "Working..." }), 1);
+    expect(agent.lastActivity).toBe("Interrupted — deer was closed");
+  });
+
+  test("carries over logs from state file", () => {
+    const logs = ["[setup] Creating worktree...", "● Some progress"];
+    const agent = historicalAgentFromStateFile(makeStateFile({ logs }), 1);
+    expect(agent.logs).toEqual(logs);
+  });
+
+  test("preserves elapsed from state file", () => {
+    const agent = historicalAgentFromStateFile(makeStateFile({ elapsed: 99 }), 1);
+    expect(agent.elapsed).toBe(99);
+  });
+
+  test("preserves error from state file", () => {
+    const agent = historicalAgentFromStateFile(makeStateFile({ error: "Claude exited with code 1" }), 1);
+    expect(agent.error).toBe("Claude exited with code 1");
   });
 });
