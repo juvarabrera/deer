@@ -767,11 +767,18 @@ export default function Dashboard({ cwd }: { cwd: string }) {
     if (!agent.taskId) return;
     const worktreePath = `${dataDir()}/tasks/${agent.taskId}/worktree`;
     const shell = process.env.SHELL ?? "/bin/sh";
+    const sessionName = `deer-shell-${agent.taskId}`;
 
     await withSuspendedTerminal(setSuspended, async () => {
       await Bun.sleep(50);
       const { spawnSync } = await import("node:child_process");
-      spawnSync(shell, [], { stdio: "inherit", cwd: worktreePath });
+      // Create a tmux session (or reattach if it already exists) so that
+      // ctrl+b d detaches and returns to deer, just like attaching to the agent.
+      spawnSync(
+        "tmux",
+        ["new-session", "-A", "-s", sessionName, "-c", worktreePath, shell],
+        { stdio: "inherit" },
+      );
     });
   }, []);
 
