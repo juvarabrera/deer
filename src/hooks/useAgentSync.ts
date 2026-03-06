@@ -1,14 +1,14 @@
 import { join } from "node:path";
+import { watch } from "node:fs";
 import { useState, useEffect, useRef, useCallback } from "react";
 import type { MutableRefObject } from "react";
 import { loadHistory, dataDir } from "../task";
-import { isTmuxSessionDead, captureTmuxPane } from "../sandbox/index";
 import type { SandboxCleanup } from "../sandbox/index";
 import { resolveRuntime } from "../sandbox/resolve";
 import { detectRepo } from "../git/worktree";
-import { type AgentState, historicalAgent, crossInstanceAgent } from "../agent-state";
+import { type AgentState, historicalAgent, liveTaskFromStateFile, historicalAgentFromStateFile } from "../agent-state";
+import { readTaskState, scanLiveTaskIds, isOwnerAlive } from "../task-state";
 import type { DeerConfig } from "../config";
-import { stripAnsi, IDLE_THRESHOLD } from "../dashboard-utils";
 
 export function useAgentSync(cwd: string, configRef: MutableRefObject<DeerConfig | null>) {
   const [agents, setAgents] = useState<AgentState[]>([]);
@@ -19,8 +19,6 @@ export function useAgentSync(cwd: string, configRef: MutableRefObject<DeerConfig
   const baseBranchRef = useRef("main");
   /** Proxy cleanup functions for cross-instance tasks restored after a restart */
   const restoredProxiesRef = useRef(new Map<string, SandboxCleanup>());
-  /** Pane snapshot state for idle detection on cross-instance tasks */
-  const crossInstancePaneStateRef = useRef(new Map<string, { snapshot: string; unchangedCount: number }>());
 
   // ── Detect base branch on mount ────────────────────────────────────
 
@@ -30,71 +28,83 @@ export function useAgentSync(cwd: string, configRef: MutableRefObject<DeerConfig
     }).catch(() => {});
   }, [cwd]);
 
-  // ── Sync state from history file ──────────────────────────────────
+  // ── Sync state from state files + history ──────────────────────────
 
   const syncWithHistory = useCallback(async () => {
+    // Live tasks: read state.json files written by owning deer instances
+    const liveTaskIds = await scanLiveTaskIds();
+    const liveStateFiles = new Map<string, Awaited<ReturnType<typeof readTaskState>>>();
+    for (const taskId of liveTaskIds) {
+      if (!deletedTaskIdsRef.current.has(taskId)) {
+        const state = await readTaskState(taskId);
+        if (state) liveStateFiles.set(taskId, state);
+      }
+    }
+
+    // Completed tasks: JSONL history (only non-running entries now that live tasks
+    // use state.json; running entries are kept as a fallback for tasks started by
+    // older deer versions that did not write state.json)
     const allFileTasks = await loadHistory(cwd);
     const fileTasks = allFileTasks.filter(t => !deletedTaskIdsRef.current.has(t.taskId));
+
     const currentAgents = agentsRef.current;
     const agentByTaskId = new Map(currentAgents.map(a => [a.taskId, a]));
-    const fileTaskIds = new Set(fileTasks.map(t => t.taskId));
 
-    const newAgents: AgentState[] = await Promise.all(fileTasks.map(async task => {
-      const existing = agentByTaskId.get(task.taskId);
+    // Union of all known task IDs
+    const allTaskIds = new Set([
+      ...liveStateFiles.keys(),
+      ...fileTasks.map(t => t.taskId),
+    ]);
+
+    const newAgents: AgentState[] = [];
+
+    for (const taskId of allTaskIds) {
+      const existing = agentByTaskId.get(taskId);
+
+      // Locally-managed (non-historical) agents are authoritative — keep as-is
       if (existing && !existing.historical) {
-        return existing;
+        newAgents.push(existing);
+        continue;
       }
+
       const id = existing?.id ?? nextId.current++;
+      const stateFile = liveStateFiles.get(taskId);
 
-      // For running tasks not managed by this instance, check if the tmux
-      // session is still alive to distinguish cross-instance tasks from
-      // truly interrupted ones.
-      if (task.status === "running") {
-        const isDead = await isTmuxSessionDead(`deer-${task.taskId}`);
-        if (!isDead) {
-          // Restore the bwrap proxy once per task so the sandbox can reach
-          // the Claude API after a deer restart.
-          if (!restoredProxiesRef.current.has(task.taskId) && configRef.current) {
+      if (stateFile) {
+        const ownerAlive = isOwnerAlive(stateFile.ownerPid);
+
+        if (ownerAlive && stateFile.ownerPid !== process.pid) {
+          // Cross-instance task: the owning deer process is still alive
+          if (!restoredProxiesRef.current.has(taskId) && configRef.current) {
             const runtime = resolveRuntime(configRef.current);
-            const worktreePath = join(dataDir(), "tasks", task.taskId, "worktree");
+            const worktreePath = join(dataDir(), "tasks", taskId, "worktree");
             const cleanup = await runtime.restoreProxy?.(worktreePath, configRef.current.network.allowlist);
-            if (cleanup) restoredProxiesRef.current.set(task.taskId, cleanup);
+            if (cleanup) restoredProxiesRef.current.set(taskId, cleanup);
           }
-
-          // Detect idle by comparing consecutive pane snapshots across sync ticks
-          const sessionName = `deer-${task.taskId}`;
-          const lines = await captureTmuxPane(sessionName);
-          let idle = false;
-          if (lines) {
-            const snapshot = lines.map(stripAnsi).map((l) => l.trim()).filter(Boolean).join("\n");
-            const paneState = crossInstancePaneStateRef.current.get(task.taskId) ?? { snapshot: "", unchangedCount: 0 };
-            if (snapshot === paneState.snapshot) {
-              paneState.unchangedCount++;
-            } else {
-              paneState.unchangedCount = 0;
-              paneState.snapshot = snapshot;
-            }
-            crossInstancePaneStateRef.current.set(task.taskId, paneState);
-            idle = paneState.unchangedCount >= IDLE_THRESHOLD;
-          }
-
-          return crossInstanceAgent(task, id, idle);
+          newAgents.push(liveTaskFromStateFile(stateFile, id));
+          continue;
         }
-        // Session died — stop any proxy we restored for this task and clear pane state
-        const proxyCleanup = restoredProxiesRef.current.get(task.taskId);
+
+        // Owner process died — clean up any restored proxy and show as interrupted
+        const proxyCleanup = restoredProxiesRef.current.get(taskId);
         if (proxyCleanup) {
           proxyCleanup();
-          restoredProxiesRef.current.delete(task.taskId);
+          restoredProxiesRef.current.delete(taskId);
         }
-        crossInstancePaneStateRef.current.delete(task.taskId);
-        // Fall through to historicalAgent (shows as interrupted)
+        newAgents.push(historicalAgentFromStateFile(stateFile, id));
+        continue;
       }
 
-      return historicalAgent(task, id);
-    }));
+      // No state.json — fall back to JSONL history entry
+      const fileTask = fileTasks.find(t => t.taskId === taskId);
+      if (fileTask) {
+        newAgents.push(historicalAgent(fileTask, id));
+      }
+    }
 
+    // Keep locally-owned agents that haven't written their state file yet
     for (const agent of currentAgents) {
-      if (!agent.historical && !fileTaskIds.has(agent.taskId)) {
+      if (!agent.historical && !allTaskIds.has(agent.taskId)) {
         newAgents.push(agent);
       }
     }
@@ -103,23 +113,52 @@ export function useAgentSync(cwd: string, configRef: MutableRefObject<DeerConfig
       newAgents.length !== currentAgents.length ||
       newAgents.some((a, i) => {
         const cur = currentAgents[i];
-        return !cur || a.taskId !== cur.taskId || a.status !== cur.status || a.lastActivity !== cur.lastActivity || a.idle !== cur.idle;
+        return !cur ||
+          a.taskId !== cur.taskId ||
+          a.status !== cur.status ||
+          a.lastActivity !== cur.lastActivity ||
+          a.idle !== cur.idle ||
+          a.elapsed !== cur.elapsed ||
+          a.logs.length !== cur.logs.length;
       });
 
     if (changed) setAgents(newAgents);
   }, [cwd]);
 
-  // ── Load history on mount ──────────────────────────────────────────
+  // ── Load on mount ──────────────────────────────────────────────────
 
   useEffect(() => {
     syncWithHistory();
   }, [syncWithHistory]);
 
-  // ── Poll history file for changes from other deer instances ────────
+  // ── Watch tasks directory for instant cross-instance updates ───────
 
   useEffect(() => {
-    const interval = setInterval(syncWithHistory, 2_000);
-    return () => clearInterval(interval);
+    const tasksDir = join(dataDir(), "tasks");
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const trigger = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(syncWithHistory, 100);
+    };
+
+    let watcher: ReturnType<typeof watch> | null = null;
+    try {
+      watcher = watch(tasksDir, { recursive: true }, (_, filename) => {
+        if (filename?.endsWith("state.json")) trigger();
+      });
+    } catch {
+      // tasks dir may not exist yet — the slow poll below provides fallback
+    }
+
+    // Safety-net poll in case fs.watch misses events (e.g. on some Linux setups)
+    const interval = setInterval(syncWithHistory, 10_000);
+
+    return () => {
+      watcher?.close();
+      clearInterval(interval);
+      if (debounceTimer) clearTimeout(debounceTimer);
+    };
   }, [syncWithHistory]);
 
   return { agents, setAgents, agentsRef, nextId, deletedTaskIdsRef, baseBranchRef, restoredProxiesRef, syncWithHistory };
