@@ -224,7 +224,7 @@ export async function createPullRequest(options: CreatePROptions): Promise<Creat
   };
 }
 
-export interface UpdatePROptions {
+export interface PushBranchOptions {
   worktreePath: string;
   /** @example "deer/fix-login-redirect" */
   branch: string;
@@ -234,7 +234,7 @@ export interface UpdatePROptions {
  * Push new commits (and any uncommitted changes) from the worktree to the
  * existing remote branch, updating the open PR without creating a new one.
  */
-export async function pushBranchUpdates(options: UpdatePROptions): Promise<void> {
+export async function pushBranchUpdates(options: PushBranchOptions): Promise<void> {
   const { worktreePath, branch } = options;
 
   // Remove deer internal files before staging
