@@ -6,7 +6,8 @@ import { upsertHistory, removeFromHistory, dataDir } from "../task";
 import type { PersistedTask } from "../task";
 import type { DeerConfig } from "../config";
 import type { PreflightResult } from "../preflight";
-import { startAgent, destroyAgent, deleteTask, createAgentPR, updateAgentPR } from "../agent";
+import { startAgent, destroyAgent, deleteTask, createAgentPR } from "../agent";
+import { updatePullRequest } from "../git/finalize";
 import { isTmuxSessionDead, captureTmuxPane } from "../sandbox/index";
 import { resolveRuntime } from "../sandbox/resolve";
 import { transition } from "../state-machine";
@@ -317,25 +318,28 @@ export function useAgentActions({
   // ── Update PR ─────────────────────────────────────────────────────
 
   const updatePr = useCallback(async (agent: AgentState) => {
-    if (!agent.handle || !agent.result?.prUrl) return;
+    if (!agent.result?.prUrl || !agent.result?.finalBranch) return;
 
-    agent.creatingPr = true;
+    const worktreePath = `${dataDir()}/tasks/${agent.taskId}/worktree`;
+
+    agent.updatingPr = true;
     agent.lastActivity = "Updating PR...";
     setAgents((prev) => [...prev]);
 
     try {
-      await updateAgentPR(
-        agent.handle,
-        cwd,
-        agent.baseBranch,
-        agent.prompt,
-        agent.result.prUrl,
-      );
+      await updatePullRequest({
+        repoPath: cwd,
+        worktreePath,
+        finalBranch: agent.result.finalBranch,
+        baseBranch: agent.baseBranch,
+        prompt: agent.prompt,
+        prUrl: agent.result.prUrl,
+      });
       agent.lastActivity = "PR updated";
     } catch (err) {
       agent.lastActivity = `PR update failed: ${err instanceof Error ? err.message : String(err)}`;
     } finally {
-      agent.creatingPr = false;
+      agent.updatingPr = false;
     }
     await saveToHistory(agent, cwd);
     setAgents((prev) => [...prev]);
