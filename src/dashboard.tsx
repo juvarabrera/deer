@@ -35,7 +35,7 @@ const LOG_LINES_PER_ENTRY = 2;
 const ENTRY_ROWS_BASE = 1 + LOG_LINES_PER_ENTRY;
 const ENTRY_ROWS_WITH_PR = ENTRY_ROWS_BASE + 1;
 const MODEL = "sonnet";
-const PR_MERGE_CHECK_INTERVAL_MS = 60_000;
+const PR_MERGE_CHECK_INTERVAL_MS = 10_000;
 const POLL_MS = 1_000;
 /** Number of consecutive unchanged pane captures before considering Claude idle */
 const IDLE_THRESHOLD = 3;
@@ -186,18 +186,48 @@ async function saveToHistory(agent: AgentState, repoPath: string): Promise<void>
   await upsertHistory(repoPath, task);
 }
 
-/** Check the current state of a PR via `gh pr view`. */
+let _ghToken: string | null | undefined = undefined;
+
+/** Get the GitHub auth token, cached after first call. */
+async function getGitHubToken(): Promise<string | null> {
+  if (_ghToken !== undefined) return _ghToken;
+  try {
+    const proc = Bun.spawn(["gh", "auth", "token"], { stdout: "pipe", stderr: "pipe" });
+    const code = await proc.exited;
+    _ghToken = code === 0 ? (await new Response(proc.stdout).text()).trim() : null;
+  } catch {
+    _ghToken = null;
+  }
+  return _ghToken;
+}
+
+/** Parse a GitHub PR URL into owner, repo, and PR number. */
+function parsePrUrl(prUrl: string): { owner: string; repo: string; number: number } | null {
+  const match = prUrl.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
+  if (!match) return null;
+  return { owner: match[1], repo: match[2], number: parseInt(match[3], 10) };
+}
+
+/** Check the current state of a PR via the GitHub REST API. */
 async function checkPrState(prUrl: string): Promise<"open" | "merged" | "closed" | null> {
   try {
-    const proc = Bun.spawn(
-      ["gh", "pr", "view", prUrl, "--json", "state", "-q", ".state"],
-      { stdout: "pipe", stderr: "pipe" },
+    const token = await getGitHubToken();
+    const parsed = parsePrUrl(prUrl);
+    if (!parsed) return null;
+    const { owner, repo, number } = parsed;
+    const res = await fetch(
+      `https://api.github.com/repos/${owner}/${repo}/pulls/${number}`,
+      {
+        headers: {
+          Accept: "application/vnd.github+json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      },
     );
-    const code = await proc.exited;
-    if (code !== 0) return null;
-    const state = (await new Response(proc.stdout).text()).trim();
-    if (state === "MERGED") return "merged";
-    if (state === "CLOSED") return "closed";
+    if (!res.ok) return null;
+    const data = await res.json() as { state: string; merged: boolean };
+    if (data.merged) return "merged";
+    if (data.state === "closed") return "closed";
     return "open";
   } catch {
     return null;
