@@ -376,6 +376,8 @@ export function useAgentActions({
 
     agent.creatingPr = true;
     agent.lastActivity = "Creating PR...";
+    appendLog(agent, `[pr] Starting PR creation...`, true);
+    appendLog(agent, `[pr] worktreePath=${agent.worktreePath} branch=${agent.branch} baseBranch=${agent.baseBranch}`, true);
     setAgents((prev) => [...prev]);
 
     try {
@@ -385,11 +387,20 @@ export function useAgentActions({
         branch: agent.branch,
         baseBranch: agent.baseBranch,
         prompt: agent.prompt,
+        onLog: (msg) => {
+          appendLog(agent, msg, true);
+          setAgents((prev) => [...prev]);
+        },
       });
       agent.result = { finalBranch: result.finalBranch, prUrl: result.prUrl };
       agent.lastActivity = "PR created";
+      appendLog(agent, `[pr] PR created: ${result.prUrl}`, true);
     } catch (err) {
-      agent.lastActivity = `PR failed: ${err instanceof Error ? err.message : String(err)}`;
+      const msg = err instanceof Error ? err.message : String(err);
+      agent.status = transition(agent.status, "PR_FAILED") ?? agent.status;
+      agent.error = msg;
+      agent.lastActivity = `PR failed: ${truncate(msg, 120)}`;
+      appendLog(agent, `[pr] PR creation failed: ${msg}`);
     } finally {
       agent.creatingPr = false;
     }

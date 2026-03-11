@@ -11,6 +11,7 @@ export const STATUS_DISPLAY: Record<AgentStatus, { icon: string; color: string }
   failed:      { icon: "\u2717",  color: "red" },
   cancelled:   { icon: "\u2298",  color: "gray" },
   interrupted: { icon: "!",  color: "yellow" },
+  pr_failed:   { icon: "\u2717",  color: "red" },
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────

@@ -29,7 +29,7 @@ interface KeyboardInputDeps {
 }
 
 function copyLogsToClipboard(agent: AgentState): void {
-  const text = agent.logs.map((l) => l.text).join("\n");
+  const text = agent.logs.map((l) => typeof l === "string" ? l : l.text).join("\n");
   const cmd = process.platform === "darwin" ? "pbcopy" : "xclip -selection clipboard";
   const [bin, ...args] = cmd.split(" ");
   const proc = Bun.spawn([bin, ...args], { stdin: "pipe" });

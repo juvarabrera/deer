@@ -14,7 +14,10 @@ interface LogDetailPanelProps {
 export function LogDetailPanel({ agent, height, termWidth, verboseMode }: LogDetailPanelProps) {
   const extraLines = (agent.result?.prUrl ? 1 : 0) + (agent.error ? 1 : 0);
   const visibleLogs = Math.max(MAX_VISIBLE_LOGS - extraLines, 1);
-  const detailLogs = verboseMode ? agent.logs : agent.logs.filter((l) => !l.verbose);
+  const normalizedLogs = agent.logs.map((l) =>
+    typeof l === "string" ? { text: l, verbose: false } : l,
+  );
+  const detailLogs = verboseMode ? normalizedLogs : normalizedLogs.filter((l) => !l.verbose);
 
   return (
     <Box flexDirection="column" paddingX={1} height={height} overflowY="hidden">

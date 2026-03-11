@@ -42,6 +42,8 @@ export interface CreatePROptions {
   branch: string;
   baseBranch: string;
   prompt: string;
+  /** Verbose log callback for diagnostics */
+  onLog?: (message: string) => void;
 }
 
 export interface UpdatePROptions {
@@ -211,36 +213,53 @@ ${truncatedDiff}`;
  * - Creates a PR via `gh pr create`
  */
 export async function createPullRequest(options: CreatePROptions): Promise<CreatePRResult> {
-  const { repoPath, worktreePath, branch, baseBranch, prompt } = options;
+  const { repoPath, worktreePath, branch, baseBranch, prompt, onLog } = options;
+  const log = onLog ?? (() => {});
 
+  log(`[pr] Staging and committing changes...`);
   await stageAndCommit(worktreePath);
 
   // Generate PR metadata using Claude
+  log(`[pr] Finding PR template...`);
   const prTemplate = await findPRTemplate(repoPath);
+  log(`[pr] PR template: ${prTemplate ? "found" : "none"}`);
+
+  log(`[pr] Generating PR metadata via Claude...`);
   const metadata = await generatePRMetadata(worktreePath, baseBranch, prompt, prTemplate);
+  log(`[pr] Metadata: branch=${metadata.branchName} title=${metadata.title}`);
 
   // Rename the branch if Claude provided a name
   let finalBranch = branch;
   if (metadata.branchName) {
     const newBranch = `deer/${metadata.branchName}`;
+    log(`[pr] Renaming branch ${branch} → ${newBranch}`);
     const renameResult = await Bun.$`git -C ${worktreePath} branch -m ${newBranch}`.quiet().nothrow();
     if (renameResult.exitCode === 0) {
       finalBranch = newBranch;
+    } else {
+      log(`[pr] Branch rename failed (exit ${renameResult.exitCode}): ${renameResult.stderr.toString().trim()}`);
     }
   }
 
+  log(`[pr] Pushing branch ${finalBranch}...`);
   await pushBranch(worktreePath, finalBranch, true);
+  log(`[pr] Push succeeded`);
 
   // Create PR
+  log(`[pr] Running gh pr create --base ${baseBranch} --head ${finalBranch}...`);
   const prResult = await Bun.$`gh pr create --base ${baseBranch} --head ${finalBranch} --title ${metadata.title} --body ${metadata.body}`.cwd(repoPath).quiet().nothrow();
 
   if (prResult.exitCode !== 0) {
     const stderr = prResult.stderr.toString().trim();
+    log(`[pr] gh pr create failed (exit ${prResult.exitCode}): ${stderr}`);
     throw new Error(`PR creation failed: ${stderr}`);
   }
 
+  const prUrl = prResult.stdout.toString().trim();
+  log(`[pr] PR created: ${prUrl}`);
+
   return {
-    prUrl: prResult.stdout.toString().trim(),
+    prUrl,
     finalBranch,
   };
 }

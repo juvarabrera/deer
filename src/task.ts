@@ -34,7 +34,7 @@ export interface TaskMetadata {
   /** @example "deer_01jm8k3nxa7f" */
   taskId: string;
   prompt: string;
-  status: "running" | "failed" | "cancelled";
+  status: "running" | "failed" | "cancelled" | "pr_failed";
   /** Elapsed seconds */
   elapsed: number;
   lastActivity: string;

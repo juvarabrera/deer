@@ -208,7 +208,10 @@ export default function Dashboard({ cwd }: { cwd: string }) {
             const isSelected = searchMode ? isSearchSelected : (i === clampedIdx && !inputFocused);
             const pointer = isSelected ? "▸" : (isSearchMatch ? "·" : " ");
 
-            const filteredLogs = verboseMode ? agent.logs : agent.logs.filter((l) => !l.verbose);
+            const normalizedLogs = agent.logs.map((l) =>
+              typeof l === "string" ? { text: l, verbose: false } : l,
+            );
+            const filteredLogs = verboseMode ? normalizedLogs : normalizedLogs.filter((l) => !l.verbose);
             const recentLogs = filteredLogs.slice(-LOG_LINES_PER_ENTRY);
             const titleOverhead = 11;
             const prBadge = agent.result?.prUrl && agent.prState

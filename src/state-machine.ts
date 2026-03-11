@@ -11,7 +11,8 @@ export type AgentStatus =
   | "teardown"
   | "failed"
   | "cancelled"
-  | "interrupted";
+  | "interrupted"
+  | "pr_failed";
 
 export type AgentEvent =
   | "SETUP_COMPLETE"
@@ -19,7 +20,8 @@ export type AgentEvent =
   | "TEARDOWN_COMPLETE"
   | "ERROR"
   | "USER_KILL"
-  | "SESSION_CLOSE";
+  | "SESSION_CLOSE"
+  | "PR_FAILED";
 
 export type AgentAction =
   | "attach"
@@ -54,11 +56,12 @@ interface ActionBinding {
 
 const TRANSITIONS: Record<AgentStatus, Partial<Record<AgentEvent, AgentStatus>>> = {
   setup:       { SETUP_COMPLETE: "running", ERROR: "failed", USER_KILL: "cancelled" },
-  running:     { TEARDOWN_START: "teardown", ERROR: "failed", USER_KILL: "cancelled", SESSION_CLOSE: "interrupted" },
+  running:     { TEARDOWN_START: "teardown", ERROR: "failed", USER_KILL: "cancelled", SESSION_CLOSE: "interrupted", PR_FAILED: "pr_failed" },
   teardown:    { TEARDOWN_COMPLETE: "running", ERROR: "failed" },
   failed:      {},
   cancelled:   {},
   interrupted: { SETUP_COMPLETE: "running" },
+  pr_failed:   {},
 };
 
 /**
@@ -78,6 +81,7 @@ const ACTIONS_BY_STATE: Record<AgentStatus, AgentAction[]> = {
   failed:      ["retry", "open_shell", "delete", "toggle_logs"],
   cancelled:   ["retry", "open_shell", "delete", "toggle_logs"],
   interrupted: ["retry", "open_shell", "delete", "toggle_logs"],
+  pr_failed:   ["attach", "create_pr", "open_shell", "delete", "toggle_logs", "retry"],
 };
 
 // ── Action Bindings ──────────────────────────────────────────────────

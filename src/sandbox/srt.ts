@@ -19,13 +19,29 @@ function resolveSrtBin(): string {
 
 /**
  * Enumerate $HOME entries and return denyRead paths for everything
- * except .claude* (which Claude Code needs to function).
+ * except .claude* and entries that are ancestors of required paths
+ * (worktree, claude binary, deer data dir, etc.).
+ *
+ * @param requiredPaths - Absolute paths that must remain readable.
+ *   Any HOME entry that is an ancestor of a required path is excluded
+ *   from the deny list.
  */
-function buildHomeDenyList(): string[] {
+function buildHomeDenyList(requiredPaths: string[]): string[] {
+  // Extract the first path component under HOME for each required path
+  const homePrefix = HOME.endsWith("/") ? HOME : HOME + "/";
+  const requiredRoots = new Set<string>();
+  for (const p of requiredPaths) {
+    if (p.startsWith(homePrefix)) {
+      const rel = p.slice(homePrefix.length);
+      const root = rel.split("/")[0];
+      if (root) requiredRoots.add(root);
+    }
+  }
+
   try {
     const entries = readdirSync(HOME);
     return entries
-      .filter((name) => !name.startsWith(".claude"))
+      .filter((name) => !name.startsWith(".claude") && !requiredRoots.has(name))
       .map((name) => join(HOME, name));
   } catch {
     // Fallback to known sensitive paths if HOME is unreadable
@@ -39,7 +55,10 @@ function buildHomeDenyList(): string[] {
       join(HOME, ".npmrc"),
       join(HOME, ".pypirc"),
       join(HOME, ".git-credentials"),
-    ];
+    ].filter((p) => {
+      const name = p.slice(homePrefix.length).split("/")[0];
+      return !requiredRoots.has(name ?? "");
+    });
   }
 }
 
@@ -63,9 +82,18 @@ function buildSrtSettings(options: SandboxRuntimeOptions): Record<string, unknow
     network.allowUnixSockets = [dirname(options.mitmProxy.socketPath)];
   }
 
-  // Deny read access to all HOME entries except .claude* (which Claude Code needs).
+  // Collect paths that must stay readable: worktree, repo .git dir,
+  // PATH entries under HOME, and the deer data dir (worktree parent).
+  const requiredPaths = [
+    options.worktreePath,
+    dirname(options.worktreePath),
+    ...(options.repoGitDir ? [options.repoGitDir] : []),
+    ...(process.env.PATH?.split(":").filter((p) => p.startsWith(HOME)) ?? []),
+  ];
+
+  // Deny read access to all HOME entries except .claude* and required roots.
   // Dynamically enumerated so new dotfiles/dirs are automatically blocked.
-  const denyRead = buildHomeDenyList();
+  const denyRead = buildHomeDenyList(requiredPaths);
 
   return {
     network,
