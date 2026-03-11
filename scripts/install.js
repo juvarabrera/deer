@@ -5,6 +5,7 @@ import { join, dirname } from "path";
 import { homedir, platform, arch } from "os";
 import { createRequire } from "module";
 import { fileURLToPath } from "url";
+import { execFileSync } from "child_process";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -12,6 +13,8 @@ const pkg = require("../package.json");
 
 const REPO = "zdavison/deer";
 const VERSION = pkg.version;
+const SRT_PACKAGE = "@anthropic-ai/sandbox-runtime";
+const SRT_VERSION = pkg.dependencies[SRT_PACKAGE] ?? "latest";
 
 const PLATFORM_MAP = {
   linux: "linux",
@@ -60,6 +63,22 @@ async function install() {
   await chmod(installPath, 0o755);
 
   console.log(`\nInstalled to: ${installPath}`);
+
+  // Install sandbox runtime to deer's data directory
+  const deerDataDir = join(homedir(), ".local", "share", "deer");
+  await mkdir(deerDataDir, { recursive: true });
+  console.log(`\nInstalling ${SRT_PACKAGE}@${SRT_VERSION}...`);
+  try {
+    execFileSync("npm", ["install", "--prefix", deerDataDir, `${SRT_PACKAGE}@${SRT_VERSION}`], {
+      stdio: "inherit",
+    });
+    console.log(`Installed ${SRT_PACKAGE} to: ${deerDataDir}`);
+  } catch {
+    console.error(
+      `\nWarning: Failed to install ${SRT_PACKAGE}. You can install it manually:\n` +
+      `  npm install --prefix ${deerDataDir} ${SRT_PACKAGE}`
+    );
+  }
 
   // Warn if installDir is not in PATH
   const pathDirs = (process.env.PATH ?? "").split(":");

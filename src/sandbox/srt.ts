@@ -6,15 +6,37 @@ import { HOME } from "../constants";
 
 /**
  * Resolve the srt binary path from the installed @anthropic-ai/sandbox-runtime package.
- * Falls back to bare "srt" (assumes it's in PATH, e.g. globally installed).
+ *
+ * Search order:
+ * 1. Local node_modules (dev / bun run dev)
+ * 2. deer data dir (~/.local/share/deer/node_modules) — installed by `bunx @zdavison/deer install`
+ * 3. Bare "srt" on PATH (globally installed)
  */
 function resolveSrtBin(): string {
-  try {
-    const require = createRequire(import.meta.url);
-    return require.resolve("@anthropic-ai/sandbox-runtime/dist/cli.js");
-  } catch {
-    return "srt";
+  const candidates = [
+    // 1. Local node_modules (works in dev)
+    () => {
+      const require = createRequire(import.meta.url);
+      return require.resolve("@anthropic-ai/sandbox-runtime/dist/cli.js");
+    },
+    // 2. deer data dir (works for compiled binary)
+    () => {
+      const dataDir = join(HOME, ".local", "share", "deer");
+      const cliPath = join(dataDir, "node_modules", "@anthropic-ai", "sandbox-runtime", "dist", "cli.js");
+      require("node:fs").accessSync(cliPath);
+      return cliPath;
+    },
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      return candidate();
+    } catch {
+      continue;
+    }
   }
+
+  return "srt";
 }
 
 /**

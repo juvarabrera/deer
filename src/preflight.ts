@@ -1,5 +1,7 @@
 import { HOME } from "./constants";
 import { createRequire } from "node:module";
+import { accessSync } from "node:fs";
+import { join } from "node:path";
 
 export interface PreflightResult {
   ok: boolean;
@@ -11,11 +13,21 @@ export async function runPreflight(): Promise<PreflightResult> {
   const errors: string[] = [];
 
   // Check srt (Anthropic Sandbox Runtime)
+  // Search local node_modules (dev) then deer data dir (compiled binary)
+  let srtFound = false;
   try {
     const require = createRequire(import.meta.url);
     require.resolve("@anthropic-ai/sandbox-runtime/dist/cli.js");
-  } catch {
-    errors.push("@anthropic-ai/sandbox-runtime not installed — run: bun add @anthropic-ai/sandbox-runtime");
+    srtFound = true;
+  } catch { /* not in local node_modules */ }
+  if (!srtFound) {
+    try {
+      accessSync(join(HOME, ".local", "share", "deer", "node_modules", "@anthropic-ai", "sandbox-runtime", "dist", "cli.js"));
+      srtFound = true;
+    } catch { /* not in deer data dir either */ }
+  }
+  if (!srtFound) {
+    errors.push("@anthropic-ai/sandbox-runtime not installed — run: bunx @zdavison/deer install");
   }
 
   // Check platform-specific sandbox dependencies
