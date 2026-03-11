@@ -103,6 +103,8 @@ function buildSrtSettings(options: SandboxRuntimeOptions): Record<string, unknow
         options.worktreePath,
         claudeDir,
         join(HOME, ".claude.json"),
+        "/tmp",
+        "/private/tmp",
         ...(options.extraWritePaths ?? []),
       ],
       denyWrite: [],
