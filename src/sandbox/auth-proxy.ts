@@ -22,9 +22,11 @@
  */
 
 import { spawn } from "node:child_process";
-import { join, dirname } from "node:path";
+import { join } from "node:path";
+import { mkdirSync, writeFileSync, existsSync } from "node:fs";
 import { createInterface } from "node:readline";
-import { fileURLToPath } from "node:url";
+
+import authProxySource from "./auth-proxy-server.mjs" with { type: "text" };
 
 export interface ProxyUpstream {
   /** Domain to match (e.g. "api.anthropic.com") */
@@ -44,7 +46,25 @@ export interface AuthProxy {
   close: () => Promise<void>;
 }
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
+/**
+ * Materialize the auth proxy server script to disk so Node.js can run it.
+ *
+ * In dev (bun run dev) the .mjs file is already on disk, but inside a compiled
+ * Bun binary __dirname points to the virtual /$bunfs/ filesystem which Node
+ * cannot access. We use Bun's `import … with { type: "text" }` to embed the
+ * source at compile time, then write it to the deer data dir on first use.
+ */
+function ensureServerScript(): string {
+  const dataDir = join(process.env.HOME ?? "/root", ".local", "share", "deer");
+  const scriptPath = join(dataDir, "auth-proxy-server.mjs");
+
+  if (!existsSync(scriptPath)) {
+    mkdirSync(dataDir, { recursive: true });
+    writeFileSync(scriptPath, authProxySource, "utf-8");
+  }
+
+  return scriptPath;
+}
 
 /**
  * Start the authenticating MITM proxy as a Node.js subprocess.
@@ -57,7 +77,7 @@ export async function startAuthProxy(
   upstreams: ProxyUpstream[],
   onLog?: (message: string) => void,
 ): Promise<AuthProxy> {
-  const serverScript = join(__dirname, "auth-proxy-server.mjs");
+  const serverScript = ensureServerScript();
 
   const child = spawn("node", [serverScript, socketPath, JSON.stringify(upstreams)], {
     stdio: ["ignore", "pipe", "pipe"],

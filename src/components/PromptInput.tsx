@@ -87,10 +87,17 @@ export function PromptInput({
           setCursorOffset(newCursor);
         }
       } else if (input) {
+        // Strip Kitty keyboard protocol responses (e.g. \x1b[?0u) that the
+        // terminal sends back when the protocol is enabled. In compiled binaries
+        // startup is fast enough that the response arrives after Ink's input
+        // handler is active and gets passed through as raw text.
+        const cleaned = input.replace(/\[\?\d+u/g, "");
+        if (!cleaned) return;
+
         const cur = cursorOffsetRef.current;
         const val = valueRef.current;
-        const newValue = val.slice(0, cur) + input + val.slice(cur);
-        const newCursor = cur + input.length;
+        const newValue = val.slice(0, cur) + cleaned + val.slice(cur);
+        const newCursor = cur + cleaned.length;
         valueRef.current = newValue;
         cursorOffsetRef.current = newCursor;
         setValue(newValue);
