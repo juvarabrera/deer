@@ -259,5 +259,5 @@ export function PromptInput({
     return result;
   }, [value, cursorOffset, pasteBlocks, placeholder, isDisabled]);
 
-  return <Text>{parts}</Text>;
+  return <Text wrap="wrap">{parts}</Text>;
 }
