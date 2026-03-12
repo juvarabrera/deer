@@ -25,11 +25,12 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Ruby
-        uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: "3.3"
-          bundler-cache: true
-          working-directory: docs
+        run: gem install bundler
+        working-directory: docs
+
+      - name: Install dependencies
+        run: bundle install
+        working-directory: docs
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
