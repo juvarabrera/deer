@@ -156,7 +156,7 @@ async function generatePRMetadata(worktreePath: string, baseBranch: string, prom
     : "";
 
   const bodyInstruction = prTemplate
-    ? "body: follow the PR template structure above, filling in relevant sections based on the changes. Start with a ## Task section containing the original task prompt as a blockquote. End with a horizontal rule and \"> Created by [deer](https://github.com/zdavison/deer) — review carefully.\""
+    ? "body: follow the PR template structure above, filling in each section based on what the commits and diff ACTUALLY show was done — not based on the task prompt alone. The task prompt tells you what was requested; the diff and commits tell you what was actually implemented. Start with a ## Task section containing the original task prompt as a blockquote. End with a horizontal rule and \"> Created by [deer](https://github.com/zdavison/deer) — review carefully.\""
     : "body: markdown starting with a ## Task section containing the original task prompt as a blockquote, followed by a ## Summary section describing what changed and why, then a ## Changes section with bullet points of key changes. End with a horizontal rule and \"> Created by [deer](https://github.com/zdavison/deer) — review carefully.\"";
 
   const prLang = getPRLanguage();
