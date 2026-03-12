@@ -81,12 +81,33 @@ export async function runPreflight(): Promise<PreflightResult> {
   }
 
   // Check credentials — OAuth token preferred, API key accepted as fallback.
-  // Claude Code stores OAuth credentials in the macOS Keychain, which is
-  // inaccessible from inside the sandbox. Extract the token on the host
-  // and pass it via CLAUDE_CODE_OAUTH_TOKEN so sandboxed agents can auth.
+  const credentialType = await resolveCredentials();
+  if (credentialType === "none") {
+    errors.push(t("preflight_no_credentials"));
+  }
+
+  return { ok: errors.length === 0, errors, credentialType };
+}
+
+/**
+ * Resolve credentials from all available sources, setting CLAUDE_CODE_OAUTH_TOKEN
+ * or ANTHROPIC_API_KEY in process.env as a side effect.
+ *
+ * Resolution order (first match wins):
+ *   1. CLAUDE_CODE_OAUTH_TOKEN env var (already set)
+ *   2. ~/.claude/agent-oauth-token flat file
+ *   3. macOS Keychain (darwin only) — Claude Code stores OAuth here
+ *   4. ~/.claude.json — Claude Code stores OAuth here on Linux
+ *
+ * OAuth always wins over API key: if an OAuth token is found, ANTHROPIC_API_KEY
+ * is removed from the environment.
+ *
+ * @param homeDir - Home directory to use (defaults to HOME constant; overridable in tests)
+ */
+export async function resolveCredentials(homeDir = HOME): Promise<PreflightResult["credentialType"]> {
   if (!process.env.CLAUDE_CODE_OAUTH_TOKEN) {
-    // 1. Try the flat file (legacy / explicit override)
-    const tokenFile = `${HOME}/.claude/agent-oauth-token`;
+    // 1. Try the flat file (explicit override)
+    const tokenFile = join(homeDir, ".claude", "agent-oauth-token");
     try {
       const f = Bun.file(tokenFile);
       if (await f.exists()) {
@@ -111,18 +132,24 @@ export async function runPreflight(): Promise<PreflightResult> {
       }
     } catch { /* ignore — keychain unavailable or no entry */ }
   }
+  if (!process.env.CLAUDE_CODE_OAUTH_TOKEN) {
+    // 3. Read from ~/.claude.json where Claude Code stores OAuth on Linux
+    try {
+      const f = Bun.file(join(homeDir, ".claude.json"));
+      if (await f.exists()) {
+        const creds = JSON.parse(await f.text());
+        const accessToken = creds?.claudeAiOauth?.accessToken;
+        if (typeof accessToken === "string" && accessToken.length > 0) {
+          process.env.CLAUDE_CODE_OAUTH_TOKEN = accessToken;
+        }
+      }
+    } catch { /* ignore — file absent or malformed */ }
+  }
   // Strip API key if OAuth is now available (OAuth always wins)
   if (process.env.CLAUDE_CODE_OAUTH_TOKEN) {
     delete process.env.ANTHROPIC_API_KEY;
   }
-  let credentialType: PreflightResult["credentialType"] = "none";
-  if (process.env.CLAUDE_CODE_OAUTH_TOKEN) {
-    credentialType = "subscription";
-  } else if (process.env.ANTHROPIC_API_KEY) {
-    credentialType = "api-token";
-  } else {
-    errors.push(t("preflight_no_credentials"));
-  }
-
-  return { ok: errors.length === 0, errors, credentialType };
+  if (process.env.CLAUDE_CODE_OAUTH_TOKEN) return "subscription";
+  if (process.env.ANTHROPIC_API_KEY) return "api-token";
+  return "none";
 }
