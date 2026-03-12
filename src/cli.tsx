@@ -24,7 +24,7 @@ async function main() {
     process.stdout.write("\x1b[?1049h");
 
     const instance = render(<DemoDashboard />, {
-      kittyKeyboard: { flags: ["disambiguateEscapeCodes"] },
+      kittyKeyboard: { flags: ["disambiguateEscapeCodes", "reportEventTypes"] },
     });
 
     await instance.waitUntilExit();
@@ -51,7 +51,7 @@ async function main() {
   process.stdout.write("\x1b[?1049h");
 
   const instance = render(<Dashboard cwd={repoRoot} />, {
-    kittyKeyboard: { flags: ["disambiguateEscapeCodes"] },
+    kittyKeyboard: { flags: ["disambiguateEscapeCodes", "reportEventTypes"] },
   });
 
   await instance.waitUntilExit();
