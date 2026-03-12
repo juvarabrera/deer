@@ -79,11 +79,19 @@ export function captureSnapshot(lines: string[]): string {
   return lines.map(stripAnsi).map((l) => l.trim()).filter(Boolean).join("\n");
 }
 
+/**
+ * Synchronous flag indicating the terminal is suspended for a child process
+ * (e.g. tmux attach). Checked by input handlers that can't rely on React
+ * state updates (which are async and blocked during spawnSync).
+ */
+export let terminalSuspended = false;
+
 /** Suspend the ink alternate screen, run fn, then restore. */
 export async function withSuspendedTerminal(
   setSuspended: (v: boolean) => void,
   fn: () => Promise<void>,
 ): Promise<void> {
+  terminalSuspended = true;
   setSuspended(true);
   // Leave Ink's alternate screen
   process.stdout.write("\x1b[?1049l");
@@ -93,12 +101,13 @@ export async function withSuspendedTerminal(
   try {
     await fn();
   } finally {
-    // Drain any keystrokes buffered while the child process had stdin
-    // (e.g. ctrl+c typed inside tmux), so they don't reach Ink's handlers.
-    let chunk: Buffer | string | null;
-    while ((chunk = process.stdin.read()) !== null) { /* discard */ }
-    process.stdin.resume();
+    // Re-enable raw mode and resume stdin, then let a tick pass so any
+    // buffered keystrokes (e.g. ctrl+c typed inside tmux) are delivered
+    // and discarded by handlers that check terminalSuspended.
     if (process.stdin.setRawMode) process.stdin.setRawMode(true);
+    process.stdin.resume();
+    await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    terminalSuspended = false;
     process.stdout.write("\x1b[?1049h\x1b[2J\x1b[H");
     setSuspended(false);
   }

@@ -1,6 +1,7 @@
 import { Text } from "ink";
 import React, { useState, useRef, useMemo, useEffect } from "react";
 import { useInput } from "ink";
+import { terminalSuspended } from "../dashboard-utils";
 
 /** Number of newlines required for pasted text to be shown collapsed (fallback without bracketed paste mode). */
 const PASTE_LINE_THRESHOLD = 5;
@@ -64,6 +65,7 @@ export function PromptInput({
   useInput(
     (input, key) => {
       if (key.eventType === "release") return;
+      if (terminalSuspended) return;
 
       if (
         key.upArrow ||
