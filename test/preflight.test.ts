@@ -62,6 +62,30 @@ describe("resolveCredentials", () => {
     });
   });
 
+  describe("sk-ant-oat* tokens from OAuth login", () => {
+    test("returns subscription when env var is sk-ant-oat token", async () => {
+      process.env.CLAUDE_CODE_OAUTH_TOKEN = "sk-ant-oat01-xxxx";
+      const home = makeTempHome();
+      try {
+        const result = await resolveCredentials(home);
+        expect(result).toBe("subscription");
+      } finally {
+        rmSync(home, { recursive: true });
+      }
+    });
+
+    test("returns subscription when agent-oauth-token file contains sk-ant-oat token", async () => {
+      const home = makeTempHome();
+      try {
+        writeFileSync(join(home, ".claude", "agent-oauth-token"), "sk-ant-oat01-xxxx\n");
+        const result = await resolveCredentials(home);
+        expect(result).toBe("subscription");
+      } finally {
+        rmSync(home, { recursive: true });
+      }
+    });
+  });
+
   describe("~/.claude/agent-oauth-token file", () => {
     test("reads token from flat file when env var is absent", async () => {
       const home = makeTempHome();
