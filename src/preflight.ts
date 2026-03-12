@@ -150,9 +150,7 @@ export async function resolveCredentials(homeDir = HOME): Promise<PreflightResul
     delete process.env.ANTHROPIC_API_KEY;
   }
   if (process.env.CLAUDE_CODE_OAUTH_TOKEN) {
-    // sk-ant-oat* tokens are API OAuth tokens, not subscription OAuth
-    const token = process.env.CLAUDE_CODE_OAUTH_TOKEN;
-    return token.startsWith("sk-ant-") ? "api-token" : "subscription";
+    return "subscription";
   }
   if (process.env.ANTHROPIC_API_KEY) return "api-token";
   return "none";
