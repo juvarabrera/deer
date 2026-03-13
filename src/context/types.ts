@@ -25,6 +25,12 @@ export interface ContextSource {
    */
   icon: string;
   /**
+   * Maximum number of chips of this type that can be active at once.
+   * When the limit is reached, adding a new chip displaces the most recently
+   * added chip of this type (LIFO). Omit for no limit.
+   */
+  limit?: number;
+  /**
    * Fetch items matching `query` from this source.
    * An empty query should return a sensible default set (e.g. all local branches).
    *

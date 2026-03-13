@@ -8,6 +8,7 @@ import { LogDetailPanel } from "./components/LogDetailPanel";
 import { ContextPicker } from "./components/ContextPicker";
 import { ContextChipBar } from "./components/ContextChipBar";
 import { resolveChips } from "./context/resolve";
+import { CONTEXT_SOURCES } from "./context/sources/index";
 import type { ContextChip } from "./context/types";
 import { runPreflight, type PreflightResult } from "./preflight";
 import { PromptInput } from "./components/PromptInput";
@@ -315,7 +316,19 @@ export default function Dashboard({ cwd, mockAgents }: { cwd: string; mockAgents
         <ContextPicker
           repoPath={cwd}
           onSelect={(chip) => {
-            setContextChips((prev) => [...prev, chip]);
+            const limit = CONTEXT_SOURCES.find((s) => s.type === chip.type)?.limit;
+            setContextChips((prev) => {
+              if (limit === undefined || prev.filter((c) => c.type === chip.type).length < limit) {
+                return [...prev, chip];
+              }
+              // Limit reached: remove the last chip of this type (LIFO), append the new one
+              let evicted = false;
+              const next = prev.reduceRight<ContextChip[]>((acc, c) => {
+                if (!evicted && c.type === chip.type) { evicted = true; return acc; }
+                return [c, ...acc];
+              }, []);
+              return [...next, chip];
+            });
             setPickerOpen(false);
           }}
           onCancel={() => setPickerOpen(false)}
