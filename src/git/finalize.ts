@@ -3,7 +3,7 @@
  */
 
 import { join } from "path";
-import { MAX_DIFF_FOR_PR_METADATA } from "../constants";
+import { MAX_DIFF_FOR_PR_METADATA, PR_METADATA_MODEL } from "../constants";
 import { getPRLanguage } from "../i18n";
 
 /**
@@ -191,7 +191,7 @@ Diff:
 ${truncatedDiff}`;
 
   try {
-    const proc = Bun.spawn(["claude", "-p", metadataPrompt, "--output-format", "json"], {
+    const proc = Bun.spawn(["claude", "-p", metadataPrompt, "--model", PR_METADATA_MODEL, "--output-format", "json"], {
       stdout: "pipe",
       stderr: "pipe",
       timeout: 60_000,
