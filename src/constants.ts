@@ -18,6 +18,9 @@ export const BYPASS_DIALOG_KEY_DELAY_MS = 200;
 /** Max diff length sent to Claude for PR metadata generation */
 export const MAX_DIFF_FOR_PR_METADATA = 20_000;
 
+/** Model used to generate PR metadata (title, body, branch name) */
+export const PR_METADATA_MODEL = "sonnet";
+
 /** Debounce delay for cross-instance task state sync */
 export const TASK_SYNC_DEBOUNCE_MS = 100;
 
