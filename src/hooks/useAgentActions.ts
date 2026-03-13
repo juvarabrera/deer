@@ -335,11 +335,15 @@ export function useAgentActions({
     if (process.env.TMUX) {
       // Already inside tmux — switch-client is non-blocking; deer keeps running.
       const { spawnSync } = await import("node:child_process");
-      // Rebind prefix-d to a command block: switch back to the deer session,
-      // then immediately restore d to detach-client so the next Ctrl+b d in
-      // the deer session detaches normally. The {} block runs as a single
-      // binding (tmux 3.2+), unlike ; which is a top-level command separator.
-      spawnSync("tmux", ["bind-key", "d", "{", "switch-client", "-l", ";", "bind-key", "d", "detach-client", "}"], { stdio: "inherit" });
+      // Bind prefix-d so it switches back when in a deer session, or
+      // detaches normally otherwise. Uses if-shell -F to evaluate the
+      // session name at keypress time — no rebind/restore dance needed.
+      spawnSync("tmux", [
+        "bind-key", "d",
+        "if-shell", "-F", "#{m:deer-*,#{session_name}}",
+        "switch-client -l",
+        "detach-client",
+      ], { stdio: "inherit" });
       spawnSync("tmux", ["switch-client", "-t", sessionName], { stdio: "inherit" });
     } else {
       await withSuspendedTerminal(setSuspended, async () => {
@@ -381,11 +385,15 @@ export function useAgentActions({
 
     if (process.env.TMUX) {
       // Already inside tmux — switch-client is non-blocking; deer keeps running.
-      // Rebind prefix-d to a command block: switch back to the deer session,
-      // then immediately restore d to detach-client so the next Ctrl+b d in
-      // the deer session detaches normally. The {} block runs as a single
-      // binding (tmux 3.2+), unlike ; which is a top-level command separator.
-      spawnSync("tmux", ["bind-key", "d", "{", "switch-client", "-l", ";", "bind-key", "d", "detach-client", "}"], { stdio: "inherit" });
+      // Bind prefix-d so it switches back when in a deer session, or
+      // detaches normally otherwise. Uses if-shell -F to evaluate the
+      // session name at keypress time — no rebind/restore dance needed.
+      spawnSync("tmux", [
+        "bind-key", "d",
+        "if-shell", "-F", "#{m:deer-*,#{session_name}}",
+        "switch-client -l",
+        "detach-client",
+      ], { stdio: "inherit" });
       spawnSync("tmux", ["switch-client", "-t", sessionName], { stdio: "inherit" });
     } else {
       await withSuspendedTerminal(setSuspended, async () => {
