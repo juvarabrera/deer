@@ -334,7 +334,8 @@ export function useAgentActions({
       const { spawnSync } = await import("node:child_process");
       // Rebind prefix-d to switch-client -l so Ctrl+b d returns to the previous
       // (deer) session instead of detaching from the tmux server entirely.
-      spawnSync("tmux", ["bind-key", "d", "switch-client", "-l"], { stdio: "inherit" });
+      // Chaining bind-key d detach-client restores the default when switching back.
+      spawnSync("tmux", ["bind-key", "d", "switch-client", "-l", ";", "bind-key", "d", "detach-client"], { stdio: "inherit" });
       spawnSync("tmux", ["switch-client", "-t", sessionName], { stdio: "inherit" });
     } else {
       await withSuspendedTerminal(setSuspended, async () => {
@@ -378,7 +379,8 @@ export function useAgentActions({
       // Already inside tmux — switch-client is non-blocking; deer keeps running.
       // Rebind prefix-d to switch-client -l so Ctrl+b d returns to the previous
       // (deer) session instead of detaching from the tmux server entirely.
-      spawnSync("tmux", ["bind-key", "d", "switch-client", "-l"], { stdio: "inherit" });
+      // Chaining bind-key d detach-client restores the default when switching back.
+      spawnSync("tmux", ["bind-key", "d", "switch-client", "-l", ";", "bind-key", "d", "detach-client"], { stdio: "inherit" });
       spawnSync("tmux", ["switch-client", "-t", sessionName], { stdio: "inherit" });
     } else {
       await withSuspendedTerminal(setSuspended, async () => {
