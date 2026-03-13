@@ -5,6 +5,7 @@ export const branchSource: ContextSource = {
   type: "branch",
   label: "Branch",
   icon: "⎇",
+  limit: 1,
 
   async search(query: string, repoPath: string): Promise<ContextSourceItem[]> {
     const fmt = "%(refname:short)";
