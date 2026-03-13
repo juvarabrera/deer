@@ -81,8 +81,8 @@ export function captureSnapshot(lines: string[]): string {
 
 /**
  * Synchronous flag indicating the terminal is suspended for a child process
- * (e.g. tmux attach). Checked by input handlers that can't rely on React
- * state updates (which are async and blocked during spawnSync).
+ * (e.g. tmux attach). Checked by input handlers that need an immediate
+ * synchronous check rather than waiting for async React state updates.
  */
 export let terminalSuspended = false;
 
