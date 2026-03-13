@@ -332,10 +332,11 @@ export function useAgentActions({
     if (process.env.TMUX) {
       // Already inside tmux — switch-client is non-blocking; deer keeps running.
       const { spawnSync } = await import("node:child_process");
-      // Rebind prefix-d to switch-client -l so Ctrl+b d returns to the previous
-      // (deer) session instead of detaching from the tmux server entirely.
-      // Chaining bind-key d detach-client restores the default when switching back.
-      spawnSync("tmux", ["bind-key", "d", "switch-client", "-l", ";", "bind-key", "d", "detach-client"], { stdio: "inherit" });
+      // Rebind prefix-d to a command block: switch back to the deer session,
+      // then immediately restore d to detach-client so the next Ctrl+b d in
+      // the deer session detaches normally. The {} block runs as a single
+      // binding (tmux 3.2+), unlike ; which is a top-level command separator.
+      spawnSync("tmux", ["bind-key", "d", "{", "switch-client", "-l", ";", "bind-key", "d", "detach-client", "}"], { stdio: "inherit" });
       spawnSync("tmux", ["switch-client", "-t", sessionName], { stdio: "inherit" });
     } else {
       await withSuspendedTerminal(setSuspended, async () => {
@@ -377,10 +378,11 @@ export function useAgentActions({
 
     if (process.env.TMUX) {
       // Already inside tmux — switch-client is non-blocking; deer keeps running.
-      // Rebind prefix-d to switch-client -l so Ctrl+b d returns to the previous
-      // (deer) session instead of detaching from the tmux server entirely.
-      // Chaining bind-key d detach-client restores the default when switching back.
-      spawnSync("tmux", ["bind-key", "d", "switch-client", "-l", ";", "bind-key", "d", "detach-client"], { stdio: "inherit" });
+      // Rebind prefix-d to a command block: switch back to the deer session,
+      // then immediately restore d to detach-client so the next Ctrl+b d in
+      // the deer session detaches normally. The {} block runs as a single
+      // binding (tmux 3.2+), unlike ; which is a top-level command separator.
+      spawnSync("tmux", ["bind-key", "d", "{", "switch-client", "-l", ";", "bind-key", "d", "detach-client", "}"], { stdio: "inherit" });
       spawnSync("tmux", ["switch-client", "-t", sessionName], { stdio: "inherit" });
     } else {
       await withSuspendedTerminal(setSuspended, async () => {
