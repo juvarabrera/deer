@@ -7,7 +7,7 @@
 import { describe, test, expect, setDefaultTimeout, afterEach } from "bun:test";
 import { join } from "node:path";
 
-import { startDeerSession, createTestRepo, withFakeClaude, withSlowFakeClaude, waitFor, waitForNewTaskDir } from "./helpers";
+import { startDeerSession, createTestRepo, withFakeClaude, waitFor, waitForNewTaskDir } from "./helpers";
 import { isTmuxSessionDead } from "../../src/sandbox/index";
 import { getTask, getTasksByRepo, closeDb } from "../../src/db";
 
@@ -83,7 +83,7 @@ e2e("agent lifecycle", () => {
       // for several reconcile cycles (2s each) before the tmux session exists.
       await Bun.write(join(repoPath, "deer.toml"), 'setup_command = "sleep 10"\n');
 
-      await withSlowFakeClaude(async (env) => {
+      await withFakeClaude(async (env) => {
         const deer = await startDeerSession(repoPath, env);
         try {
           await deer.waitForReady();
