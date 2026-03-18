@@ -1,10 +1,5 @@
 import { test, expect, describe, beforeEach, afterEach } from "bun:test";
-import {
-  detectRepo,
-  createWorktree,
-  removeWorktree,
-} from "../../src/git/worktree";
-import { generateTaskId, dataDir } from "../../src/task";
+import { detectRepo, createWorktree, removeWorktree, generateTaskId, dataDir } from "../../packages/deerbox/src/index";
 import { mkdtemp, rm, mkdir, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";

@@ -3,6 +3,7 @@
   "version": "0.5.0",
   "description": "Unattended coding agent.",
   "type": "module",
+  "workspaces": ["packages/*"],
   "bin": {
     "deer": "scripts/install.js"
   },
@@ -13,14 +14,12 @@
     "access": "public"
   },
   "scripts": {
-    "test": "bun test",
+    "test": "bun test --cwd . test/",
     "lint": "oxlint src",
     "dev": "bun run src/cli.tsx",
     "build": "bun run scripts/build.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sandbox-runtime": "^0.0.40",
-    "@iarna/toml": "^3.0.0",
     "@inkjs/ui": "^2.0.0",
     "ink": "^6.0.0",
     "react": "^19.0.0",

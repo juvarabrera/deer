@@ -1,15 +1,15 @@
 import { useCallback, useRef } from "react";
 import type { MutableRefObject, Dispatch, SetStateAction } from "react";
+import { dataDir } from "../task";
+import type { DeerConfig, PreflightResult } from "../types";
+import { t } from "../i18n";
+import { generateTaskId } from "../task";
+import { startAgent, deleteTask } from "../agent";
+import { isTmuxSessionDead, captureTmuxPane, applyTmuxStatusBar } from "../sandbox/index";
 import type { AgentState } from "../agent-state";
 import { createAgentState } from "../agent-state";
-import { generateTaskId, dataDir } from "../task";
 import { insertTask, updateTask, deleteTaskRow, claimPoller, releasePoller } from "../db";
-import type { DeerConfig } from "../config";
-import type { PreflightResult } from "../preflight";
-import { startAgent, deleteTask } from "../agent";
 import { updatePullRequest, createPullRequest } from "../git/finalize";
-import { isTmuxSessionDead, captureTmuxPane, applyTmuxStatusBar } from "../sandbox/index";
-import { resolveRuntime } from "../sandbox/resolve";
 import { transition } from "../state-machine";
 import { advancePaneState, isIdleState, seedIdleState } from "../pane-idle";
 import type { PaneState } from "../pane-idle";
@@ -27,7 +27,6 @@ import {
   DASHBOARD_POLL_MS,
   IDLE_THRESHOLD,
 } from "../constants";
-import { t } from "../i18n";
 
 // ── Runtime handle map ───────────────────────────────────────────────
 
@@ -182,7 +181,6 @@ export function useAgentActions({
         baseBranch: effectiveBranch,
         config,
         model: DEFAULT_MODEL,
-        runtime: resolveRuntime(config),
         taskId,
         continueSession,
         onStatus: (status) => {

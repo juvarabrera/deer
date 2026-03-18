@@ -2,8 +2,7 @@
  * Abstract sandbox runtime interface.
  *
  * The SRT runtime implements this to produce the command prefix that wraps
- * the inner command with sandbox capabilities. The tmux session management
- * in index.ts is runtime-agnostic.
+ * the inner command with sandbox capabilities.
  */
 
 export interface SandboxRuntimeOptions {

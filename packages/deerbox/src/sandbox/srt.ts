@@ -132,7 +132,7 @@ function buildSrtSettings(options: SandboxRuntimeOptions, srtBinDir: string | nu
       ],
       denyWrite: [],
     },
-    // Claude Code runs interactively in tmux and needs setRawMode (tcsetattr)
+    // Claude Code runs interactively and needs setRawMode (tcsetattr)
     // on PTY devices for its terminal UI.
     allowPty: true,
   };

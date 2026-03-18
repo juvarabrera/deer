@@ -1,93 +1,6 @@
-import { HOME } from "./constants";
-import { createRequire } from "node:module";
-import { accessSync } from "node:fs";
 import { join } from "node:path";
-import { t } from "./i18n";
-
-export interface PreflightResult {
-  ok: boolean;
-  errors: string[];
-  credentialType: "subscription" | "api-token" | "none";
-}
-
-export async function runPreflight(): Promise<PreflightResult> {
-  const errors: string[] = [];
-
-  // Check srt (Anthropic Sandbox Runtime)
-  // Search local node_modules (dev) then deer data dir (compiled binary)
-  let srtFound = false;
-  try {
-    const require = createRequire(import.meta.url);
-    require.resolve("@anthropic-ai/sandbox-runtime/dist/cli.js");
-    srtFound = true;
-  } catch { /* not in local node_modules */ }
-  if (!srtFound) {
-    try {
-      accessSync(join(HOME, ".local", "share", "deer", "node_modules", "@anthropic-ai", "sandbox-runtime", "dist", "cli.js"));
-      srtFound = true;
-    } catch { /* not in deer data dir either */ }
-  }
-  if (!srtFound) {
-    errors.push(t("preflight_srt_missing"));
-  }
-
-  // Check platform-specific sandbox dependencies
-  const isMac = process.platform === "darwin";
-  if (isMac) {
-    try {
-      const p = Bun.spawn(["sandbox-exec", "-n", "no-network", "true"], { stdout: "pipe", stderr: "pipe" });
-      const code = await p.exited;
-      if (code !== 0) errors.push(t("preflight_sandbox_exec_broken"));
-    } catch {
-      errors.push(t("preflight_sandbox_exec_missing"));
-    }
-  } else {
-    try {
-      const p = Bun.spawn(["bwrap", "--version"], { stdout: "pipe", stderr: "pipe" });
-      const code = await p.exited;
-      if (code !== 0) {
-        errors.push(t("preflight_bwrap_missing"));
-      }
-    } catch {
-      errors.push(t("preflight_bwrap_missing"));
-    }
-  }
-
-  // Check tmux
-  try {
-    const p = Bun.spawn(["tmux", "-V"], { stdout: "pipe", stderr: "pipe" });
-    const code = await p.exited;
-    if (code !== 0) errors.push(t("preflight_tmux_missing"));
-  } catch {
-    errors.push(t("preflight_tmux_missing"));
-  }
-
-  // Check claude
-  try {
-    const p = Bun.spawn(["claude", "--version"], { stdout: "pipe", stderr: "pipe" });
-    const code = await p.exited;
-    if (code !== 0) errors.push(t("preflight_claude_missing"));
-  } catch {
-    errors.push(t("preflight_claude_missing"));
-  }
-
-  // Check gh auth
-  try {
-    const p = Bun.spawn(["gh", "auth", "token"], { stdout: "pipe", stderr: "pipe" });
-    const code = await p.exited;
-    if (code !== 0) errors.push(t("preflight_gh_auth_missing"));
-  } catch {
-    errors.push(t("preflight_gh_missing"));
-  }
-
-  // Check credentials — OAuth token preferred, API key accepted as fallback.
-  const credentialType = await resolveCredentials();
-  if (credentialType === "none") {
-    errors.push(t("preflight_no_credentials"));
-  }
-
-  return { ok: errors.length === 0, errors, credentialType };
-}
+import { HOME } from "./constants";
+import type { PreflightResult } from "./types";
 
 /**
  * Resolve credentials from all available sources, setting CLAUDE_CODE_OAUTH_TOKEN
@@ -102,7 +15,8 @@ export async function runPreflight(): Promise<PreflightResult> {
  * OAuth always wins over API key: if an OAuth token is found, ANTHROPIC_API_KEY
  * is removed from the environment.
  *
- * @param homeDir - Home directory to use (defaults to HOME constant; overridable in tests)
+ * @duplicate packages/deerbox/src/preflight.ts — keep both in sync
+ * @param homeDir - Home directory (overridable for tests)
  */
 export async function resolveCredentials(homeDir = HOME): Promise<PreflightResult["credentialType"]> {
   if (!process.env.CLAUDE_CODE_OAUTH_TOKEN) {
@@ -149,9 +63,7 @@ export async function resolveCredentials(homeDir = HOME): Promise<PreflightResul
   if (process.env.CLAUDE_CODE_OAUTH_TOKEN) {
     delete process.env.ANTHROPIC_API_KEY;
   }
-  if (process.env.CLAUDE_CODE_OAUTH_TOKEN) {
-    return "subscription";
-  }
+  if (process.env.CLAUDE_CODE_OAUTH_TOKEN) return "subscription";
   if (process.env.ANTHROPIC_API_KEY) return "api-token";
   return "none";
 }

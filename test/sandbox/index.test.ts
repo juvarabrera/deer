@@ -1,14 +1,34 @@
 import { test, expect, describe, afterEach } from "bun:test";
+import { createSrtRuntime } from "../../packages/deerbox/src/index";
+import type { SandboxRuntimeOptions } from "../../packages/deerbox/src/index";
 import {
   launchSandbox,
   isTmuxSessionDead,
   captureTmuxPane,
-  createSrtRuntime,
   type SandboxSession,
 } from "../../src/sandbox/index";
 import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+
+/**
+ * Build a sandboxed command via SRT runtime.
+ * Handles prepare() + buildCommand() so tests can pass the result to launchSandbox().
+ */
+async function buildSandboxedCommand(
+  worktreePath: string,
+  innerCommand: string[],
+  opts?: Partial<SandboxRuntimeOptions>,
+): Promise<string[]> {
+  const runtime = createSrtRuntime();
+  const runtimeOpts: SandboxRuntimeOptions = {
+    worktreePath,
+    allowlist: [],
+    ...opts,
+  };
+  await runtime.prepare?.(runtimeOpts);
+  return runtime.buildCommand(runtimeOpts, innerCommand);
+}
 
 describe("sandbox integration", () => {
   const sessions: SandboxSession[] = [];
@@ -38,20 +58,13 @@ describe("sandbox integration", () => {
   test("launches a sandboxed command in tmux", async () => {
     const dir = await makeTmpDir();
     const name = sessionName();
+    const command = await buildSandboxedCommand(dir, ["sh", "-c", `echo "sandbox works" > ${dir}/result.txt`]);
 
-    const session = await launchSandbox({
-      sessionName: name,
-      worktreePath: dir,
-      allowlist: [],
-      runtime: createSrtRuntime(),
-      command: ["sh", "-c", `echo "sandbox works" > ${dir}/result.txt`],
-    });
+    const session = await launchSandbox({ sessionName: name, worktreePath: dir, command });
     sessions.push(session);
 
     expect(session.sessionName).toBe(name);
-
-    // Wait for the command to finish
-    await Bun.sleep(1000);
+    await Bun.sleep(300);
 
     const content = await readFile(join(dir, "result.txt"), "utf-8");
     expect(content.trim()).toBe("sandbox works");
@@ -60,18 +73,12 @@ describe("sandbox integration", () => {
   test("isTmuxSessionDead returns false for running session", async () => {
     const dir = await makeTmpDir();
     const name = sessionName();
+    const command = await buildSandboxedCommand(dir, ["sleep", "30"]);
 
-    const session = await launchSandbox({
-      sessionName: name,
-      worktreePath: dir,
-      allowlist: [],
-      runtime: createSrtRuntime(),
-      command: ["sleep", "30"],
-    });
+    const session = await launchSandbox({ sessionName: name, worktreePath: dir, command });
     sessions.push(session);
 
-    // Give tmux a moment to start the command
-    await Bun.sleep(500);
+    await Bun.sleep(300);
     const dead = await isTmuxSessionDead(name);
     expect(dead).toBe(false);
   });
@@ -79,18 +86,12 @@ describe("sandbox integration", () => {
   test("isTmuxSessionDead returns true after command exits", async () => {
     const dir = await makeTmpDir();
     const name = sessionName();
+    const command = await buildSandboxedCommand(dir, ["true"]);
 
-    const session = await launchSandbox({
-      sessionName: name,
-      worktreePath: dir,
-      allowlist: [],
-      runtime: createSrtRuntime(),
-      command: ["true"], // exits immediately
-    });
+    const session = await launchSandbox({ sessionName: name, worktreePath: dir, command });
     sessions.push(session);
 
-    // Wait for the command to finish (srt + shell startup takes time)
-    await Bun.sleep(2000);
+    await Bun.sleep(500);
     const dead = await isTmuxSessionDead(name);
     expect(dead).toBe(true);
   });
@@ -103,18 +104,12 @@ describe("sandbox integration", () => {
   test("captureTmuxPane returns output", async () => {
     const dir = await makeTmpDir();
     const name = sessionName();
+    const command = await buildSandboxedCommand(dir, ["echo", "hello from sandbox"]);
 
-    const session = await launchSandbox({
-      sessionName: name,
-      worktreePath: dir,
-      allowlist: [],
-      runtime: createSrtRuntime(),
-      command: ["echo", "hello from sandbox"],
-    });
+    const session = await launchSandbox({ sessionName: name, worktreePath: dir, command });
     sessions.push(session);
 
-    await Bun.sleep(1000);
-    // Use full scrollback to capture output from short-lived commands
+    await Bun.sleep(300);
     const lines = await captureTmuxPane(name, true);
     expect(lines).not.toBeNull();
     const joined = lines!.join("\n");
@@ -129,19 +124,12 @@ describe("sandbox integration", () => {
   test("stop() kills session", async () => {
     const dir = await makeTmpDir();
     const name = sessionName();
+    const command = await buildSandboxedCommand(dir, ["sleep", "60"]);
 
-    const session = await launchSandbox({
-      sessionName: name,
-      worktreePath: dir,
-      allowlist: [],
-      runtime: createSrtRuntime(),
-      command: ["sleep", "60"],
-    });
+    const session = await launchSandbox({ sessionName: name, worktreePath: dir, command });
 
     await session.stop();
-    // Don't push to sessions array since we already stopped
 
-    // tmux session should be gone
     const dead = await isTmuxSessionDead(name);
     expect(dead).toBe(true);
   });
@@ -149,17 +137,12 @@ describe("sandbox integration", () => {
   test("sandbox can write inside worktree", async () => {
     const dir = await makeTmpDir();
     const name = sessionName();
+    const command = await buildSandboxedCommand(dir, ["sh", "-c", `echo "inside" > ${dir}/sandboxed.txt`]);
 
-    const session = await launchSandbox({
-      sessionName: name,
-      worktreePath: dir,
-      allowlist: [],
-      runtime: createSrtRuntime(),
-      command: ["sh", "-c", `echo "inside" > ${dir}/sandboxed.txt`],
-    });
+    const session = await launchSandbox({ sessionName: name, worktreePath: dir, command });
     sessions.push(session);
 
-    await Bun.sleep(1000);
+    await Bun.sleep(300);
     const content = await readFile(join(dir, "sandboxed.txt"), "utf-8");
     expect(content.trim()).toBe("inside");
   });
@@ -167,18 +150,16 @@ describe("sandbox integration", () => {
   test("env vars are passed to the sandboxed process", async () => {
     const dir = await makeTmpDir();
     const name = sessionName();
+    const command = await buildSandboxedCommand(
+      dir,
+      ["sh", "-c", `echo $DEER_TEST_VAR > ${dir}/env-result.txt`],
+      { env: { DEER_TEST_VAR: "it_works" } },
+    );
 
-    const session = await launchSandbox({
-      sessionName: name,
-      worktreePath: dir,
-      allowlist: [],
-      env: { DEER_TEST_VAR: "it_works" },
-      runtime: createSrtRuntime(),
-      command: ["sh", "-c", `echo $DEER_TEST_VAR > ${dir}/env-result.txt`],
-    });
+    const session = await launchSandbox({ sessionName: name, worktreePath: dir, command });
     sessions.push(session);
 
-    await Bun.sleep(1000);
+    await Bun.sleep(300);
     const content = await readFile(join(dir, "env-result.txt"), "utf-8");
     expect(content.trim()).toBe("it_works");
   });
@@ -186,21 +167,19 @@ describe("sandbox integration", () => {
   test("sandbox blocks direct network access", async () => {
     const dir = await makeTmpDir();
     const name = sessionName();
-
-    // Try to make a direct connection bypassing the proxy — should fail
-    const session = await launchSandbox({
-      sessionName: name,
-      worktreePath: dir,
-      allowlist: ["example.com"],
-      runtime: createSrtRuntime(),
-      command: [
+    const command = await buildSandboxedCommand(
+      dir,
+      [
         "sh", "-c",
         `curl --noproxy '*' --max-time 3 -s -o /dev/null -w '%{http_code}' https://example.com > ${dir}/direct.txt 2>&1 || echo "BLOCKED" > ${dir}/direct.txt`,
       ],
-    });
+      { allowlist: ["example.com"] },
+    );
+
+    const session = await launchSandbox({ sessionName: name, worktreePath: dir, command });
     sessions.push(session);
 
-    await Bun.sleep(6000);
+    await Bun.sleep(4000);
     const content = await readFile(join(dir, "direct.txt"), "utf-8");
     expect(content.trim()).toBe("BLOCKED");
   }, 15000);

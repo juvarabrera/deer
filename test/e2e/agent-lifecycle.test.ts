@@ -48,7 +48,7 @@ e2e("agent lifecycle", () => {
           // Wait for fake claude to finish
           await waitFor(
             async () => isTmuxSessionDead(sessionName),
-            { timeout: 30_000, label: "agent tmux session dies (fake claude finished)" },
+            { timeout: 15_000, label: "agent tmux session dies (fake claude finished)" },
           );
 
           // Wait for deer to persist the final state to DB
@@ -81,7 +81,7 @@ e2e("agent lifecycle", () => {
     try {
       // Add a deer.toml with a slow setup_command so that startAgent() blocks
       // for several reconcile cycles (2s each) before the tmux session exists.
-      await Bun.write(join(repoPath, "deer.toml"), 'setup_command = "sleep 10"\n');
+      await Bun.write(join(repoPath, "deer.toml"), 'setup_command = "sleep 4"\n');
 
       await withFakeClaude(async (env) => {
         const deer = await startDeerSession(repoPath, env);
@@ -99,10 +99,10 @@ e2e("agent lifecycle", () => {
             { timeout: 10_000, label: "task appears in DB" },
           );
 
-          // Let 2+ reconcile cycles pass (reconcile runs every 2s).
-          // The setup_command sleeps for 10s, so tmux won't exist yet.
+          // Let 1+ reconcile cycles pass (reconcile runs every 2s).
+          // The setup_command sleeps for 4s, so tmux won't exist yet.
           // Without the fix, reconcile would mark the task interrupted here.
-          await Bun.sleep(5_000);
+          await Bun.sleep(3_000);
 
           const row = getTask(taskId);
           expect(row).not.toBeNull();
@@ -111,7 +111,7 @@ e2e("agent lifecycle", () => {
           // Verify it eventually transitions to running
           await waitFor(
             async () => getTask(taskId)?.status === "running",
-            { timeout: 30_000, label: "task reaches running status" },
+            { timeout: 15_000, label: "task reaches running status" },
           );
         } finally {
           await deer.stop();
@@ -149,7 +149,7 @@ e2e("agent lifecycle", () => {
           // Let the agent finish
           await waitFor(
             async () => isTmuxSessionDead(`deer-${taskId}`),
-            { timeout: 30_000, label: "agent session dies" },
+            { timeout: 15_000, label: "agent session dies" },
           );
         } finally {
           await deer.stop();

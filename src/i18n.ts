@@ -504,6 +504,7 @@ export function getPRLanguage(): string | null {
 /**
  * Detect language from CLI args, CLAUDE_CODE_LOCALE, or system LANG.
  * Priority: --lang=<code> > CLAUDE_CODE_LOCALE > system LANG > "en"
+ * @duplicate packages/deerbox/src/i18n.ts — keep both in sync
  */
 export function detectLang(): Lang {
   const langArg = process.argv.find((a) => a.startsWith("--lang="));

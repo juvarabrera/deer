@@ -6,8 +6,8 @@
  * expectations (command execution, file I/O, env isolation).
  */
 import { test, expect, describe, afterEach } from "bun:test";
-import { createSrtRuntime } from "../../src/sandbox/srt";
-import type { SandboxRuntime, SandboxRuntimeOptions, SandboxCleanup } from "../../src/sandbox/runtime";
+import { createSrtRuntime } from "../../packages/deerbox/src/index";
+import type { SandboxRuntime, SandboxRuntimeOptions, SandboxCleanup } from "../../packages/deerbox/src/index";
 import { mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";

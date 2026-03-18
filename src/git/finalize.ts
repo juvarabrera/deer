@@ -388,17 +388,3 @@ export async function updatePullRequest(options: UpdatePROptions): Promise<void>
   }
   log(`[pr] PR updated: ${prUrl}`);
 }
-
-/**
- * Clean up a worktree and optionally delete the branch.
- */
-export async function cleanupWorktree(
-  repoPath: string,
-  worktreePath: string,
-  branch?: string,
-): Promise<void> {
-  await Bun.$`git -C ${repoPath} worktree remove ${worktreePath} --force`.quiet().nothrow();
-  if (branch) {
-    await Bun.$`git -C ${repoPath} branch -D ${branch}`.quiet().nothrow();
-  }
-}

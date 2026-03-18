@@ -5,8 +5,8 @@
  * These tests verify allowlist enforcement.
  */
 import { test, expect, describe, afterEach } from "bun:test";
-import { createSrtRuntime } from "../../src/sandbox/srt";
-import type { SandboxCleanup } from "../../src/sandbox/runtime";
+import { createSrtRuntime } from "../../packages/deerbox/src/index";
+import type { SandboxCleanup } from "../../packages/deerbox/src/index";
 import { mkdtemp, rm, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";

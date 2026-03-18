@@ -1,12 +1,12 @@
+import { join } from "node:path";
 import { mkdir } from "node:fs/promises";
+import { HOME } from "./constants";
 
 /**
  * Generate a unique, sortable, URL-safe task ID.
  *
  * Format: `deer_<base36-timestamp><random-suffix>`
- * - Timestamp prefix makes IDs sortable by creation time
- * - Random suffix ensures uniqueness across concurrent invocations
- * - All characters are URL-safe (lowercase alphanumeric + underscore prefix)
+ * @duplicate packages/deerbox/src/task.ts — keep both in sync
  */
 export function generateTaskId(): string {
   const timestamp = Date.now().toString(36);
@@ -20,11 +20,18 @@ export function generateTaskId(): string {
 
 /**
  * Returns the base data directory for deer task storage.
+ * @duplicate packages/deerbox/src/task.ts — keep both in sync
  * @example "/home/user/.local/share/deer"
  */
 export function dataDir(): string {
-  const home = process.env.HOME;
-  return `${home}/.local/share/deer`;
+  return `${HOME}/.local/share/deer`;
+}
+
+/**
+ * Returns the worktree path for a given task ID.
+ */
+export function taskWorktreePath(taskId: string): string {
+  return join(dataDir(), "tasks", taskId, "worktree");
 }
 
 // ── Prompt Input History ──────────────────────────────────────────────

@@ -2,13 +2,11 @@ import { join } from "node:path";
 import { useState, useEffect, useRef, useCallback } from "react";
 import type { MutableRefObject } from "react";
 import { dataDir } from "../task";
-import type { SandboxCleanup } from "../sandbox/index";
+import { detectRepo } from "../git/detect";
+import type { DeerConfig } from "../types";
 import { isTmuxSessionDead, captureTmuxPane } from "../sandbox/index";
-import { resolveRuntime } from "../sandbox/resolve";
-import { detectRepo } from "../git/worktree";
 import { type AgentState, agentFromDbRow } from "../agent-state";
 import { getTasksByRepo, getAllTasks, updateTask, type TaskRow } from "../db";
-import type { DeerConfig } from "../config";
 import { DB_RECONCILE_INTERVAL_MS } from "../constants";
 import { stripAnsi, truncate } from "../dashboard-utils";
 
@@ -18,8 +16,6 @@ export function useAgentSync(cwd: string, configRef: MutableRefObject<DeerConfig
   const agentsRef = useRef(agents);
   agentsRef.current = agents;
   const baseBranchRef = useRef("main");
-  /** Proxy cleanup functions for cross-instance tasks restored after a restart */
-  const restoredProxiesRef = useRef(new Map<string, SandboxCleanup>());
   /**
    * Task IDs that have live tmux sessions after a deer restart. The dashboard
    * watches this ref and calls resumeLiveSession for each entry.
@@ -65,14 +61,6 @@ export function useAgentSync(cwd: string, configRef: MutableRefObject<DeerConfig
         const tmuxAlive = !(await isTmuxSessionDead(sessionName));
 
         if (tmuxAlive) {
-          // Restore auth proxy for cross-instance tasks
-          if (!restoredProxiesRef.current.has(row.task_id) && configRef.current) {
-            const runtime = resolveRuntime(configRef.current);
-            const worktreePath = join(dataDir(), "tasks", row.task_id, "worktree");
-            const cleanup = await runtime.restoreProxy?.(worktreePath, configRef.current.network.allowlist);
-            if (cleanup) restoredProxiesRef.current.set(row.task_id, cleanup);
-          }
-
           // If no instance is polling this task, flag it for resume
           if (row.poller_pid === null || row.poller_pid === 0) {
             if (!liveSessionIdsRef.current.has(row.task_id)) {
@@ -100,13 +88,6 @@ export function useAgentSync(cwd: string, configRef: MutableRefObject<DeerConfig
             status: "interrupted",
             finishedAt: Date.now(),
           });
-
-          // Clean up restored proxy
-          const proxyCleanup = restoredProxiesRef.current.get(row.task_id);
-          if (proxyCleanup) {
-            proxyCleanup();
-            restoredProxiesRef.current.delete(row.task_id);
-          }
 
           const agent = agentFromDbRow({ ...row, status: "interrupted" }, false);
           newAgents.push(agent);
@@ -158,5 +139,5 @@ export function useAgentSync(cwd: string, configRef: MutableRefObject<DeerConfig
     return () => clearInterval(interval);
   }, [reconcile]);
 
-  return { agents, setAgents, agentsRef, baseBranchRef, restoredProxiesRef, liveSessionIdsRef, runtimeTaskIdsRef, reconcile, showAll, setShowAll };
+  return { agents, setAgents, agentsRef, baseBranchRef, liveSessionIdsRef, runtimeTaskIdsRef, reconcile, showAll, setShowAll };
 }

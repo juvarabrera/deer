@@ -2,6 +2,24 @@
 
 Unattended coding agent — runs Claude Code in sandboxed tmux sessions against git worktrees, with a TUI dashboard.
 
+## Monorepo Structure
+
+Bun workspace monorepo with two packages:
+
+- **`packages/deerbox/`** — Core sandbox orchestration library (no TUI dependencies)
+- **Root (`src/`)** — Ink/React TUI dashboard that imports from `deerbox`
+
+```
+deer/                          # workspace root
+  package.json                 # "workspaces": ["packages/*"]
+  src/                         # deer TUI source (imports from "deerbox")
+  packages/
+    deerbox/
+      src/                     # core modules (agent, sandbox, config, etc.)
+      package.json
+      tsconfig.json
+```
+
 ## Stack
 
 - **Runtime**: Bun (required — uses `Bun.$`, `Bun.file`, `Bun.spawn`, etc.)
@@ -26,43 +44,52 @@ Each agent task:
 3. Runs `claude --dangerously-skip-permissions` inside a tmux session (`deer-<taskId>`)
 4. Finalizes by creating a GitHub PR and cleaning up
 
-### Key files
+### deerbox (core library)
 
-| File | Purpose |
-|------|---------|
-| `src/cli.tsx` | Entry point — detects repo, renders dashboard |
-| `src/dashboard.tsx` | Ink TUI dashboard |
-| `src/demo-dashboard.tsx` | Demo mode dashboard using mock agents |
-| `src/agent.ts` | Agent lifecycle: worktree → sandbox → tmux → finalize |
-| `src/agent-state.ts` | `AgentState` type, `agentFromDbRow()` constructor |
-| `src/db.ts` | SQLite database module — single source of truth for task state |
-| `src/state-machine.ts` | Per-task state machine: statuses, events, actions, keybindings |
-| `src/config.ts` | Config loading/merging (global + repo-local + CLI) |
-| `src/constants.ts` | All tunable constants (poll intervals, model, etc.) |
-| `src/preflight.ts` | Preflight checks (srt/bwrap/tmux/claude/gh) and credential resolution |
-| `src/github.ts` | GitHub token retrieval, PR URL parsing, PR state queries |
-| `src/dashboard-utils.ts` | Shared TUI helpers: formatting, ANSI stripping, terminal suspend/restore |
-| `src/fuzzy.ts` | Fuzzy search for agent list filtering |
-| `src/i18n.ts` | Locale detection and UI string translations |
-| `src/pane-idle.ts` | Tmux pane idle detection heuristics |
-| `src/updater.ts` | Self-update check logic |
-| `src/mock-agents.ts` | Static mock agent data for demo mode |
-| `src/task.ts` | Task ID generation, prompt history |
-| `src/sandbox/index.ts` | Sandbox launch, tmux session management |
-| `src/sandbox/runtime.ts` | `SandboxRuntime` interface |
-| `src/sandbox/resolve.ts` | `resolveRuntime()` — maps config string to `SandboxRuntime` |
-| `src/sandbox/srt.ts` | SRT runtime implementation |
-| `src/sandbox/auth-proxy.ts` | Host-side MITM proxy for credential injection |
-| `src/git/worktree.ts` | Git worktree create/remove/detect |
-| `src/git/finalize.ts` | PR creation and worktree cleanup |
-| `src/hooks/useAgentSync.ts` | Cross-instance state sync via SQLite polling |
-| `src/hooks/useAgentActions.ts` | Action dispatch for TUI agent cards |
-| `src/hooks/useKeyboardInput.ts` | Global keyboard input handling for the dashboard |
-| `src/hooks/usePromptHistory.ts` | Prompt input history load/save/navigation |
-| `src/hooks/useLivePRState.ts` | Live GitHub PR state polling |
-| `src/components/LogDetailPanel.tsx` | Expanded log detail panel component |
-| `src/components/PromptInput.tsx` | Multi-line prompt input with bracketed paste support |
-| `src/components/ShortcutsBar.tsx` | Contextual keyboard shortcuts bar |
+| File                                    | Purpose                                                        |
+|-----------------------------------------|----------------------------------------------------------------|
+| `packages/deerbox/src/index.ts`         | Barrel export for all public APIs                              |
+| `packages/deerbox/src/agent.ts`         | Agent lifecycle: worktree → sandbox → tmux → finalize          |
+| `packages/deerbox/src/config.ts`        | Config loading/merging (global + repo-local + CLI)             |
+| `packages/deerbox/src/constants.ts`     | Core constants (VERSION, HOME, DEFAULT_MODEL, BYPASS_DIALOG_*) |
+| `packages/deerbox/src/preflight.ts`     | Preflight checks (srt/bwrap/tmux/claude/gh) and credentials   |
+| `packages/deerbox/src/task.ts`          | Task ID generation, data directory                             |
+| `packages/deerbox/src/ecosystems.ts`    | Ecosystem-aware dependency strategies                          |
+| `packages/deerbox/src/i18n.ts`          | Locale detection and UI string translations                    |
+| `packages/deerbox/src/sandbox/index.ts` | Sandbox launch, tmux session management                        |
+| `packages/deerbox/src/sandbox/runtime.ts` | `SandboxRuntime` interface                                   |
+| `packages/deerbox/src/sandbox/resolve.ts` | `resolveRuntime()` — maps config string to `SandboxRuntime`  |
+| `packages/deerbox/src/sandbox/srt.ts`   | SRT runtime implementation                                     |
+| `packages/deerbox/src/sandbox/auth-proxy.ts` | Host-side MITM proxy for credential injection             |
+| `packages/deerbox/src/git/worktree.ts`  | Git worktree create/remove/detect/cleanup                      |
+
+### deer (TUI dashboard)
+
+| File                               | Purpose                                                      |
+|------------------------------------|--------------------------------------------------------------|
+| `src/cli.tsx`                      | Entry point — detects repo, renders dashboard                |
+| `src/dashboard.tsx`                | Ink TUI dashboard                                            |
+| `src/demo-dashboard.tsx`           | Demo mode dashboard using mock agents                        |
+| `src/agent-state.ts`              | `AgentState` type, `agentFromDbRow()` constructor            |
+| `src/db.ts`                        | SQLite database module — single source of truth for state    |
+| `src/state-machine.ts`            | Per-task state machine: statuses, events, actions, keybindings |
+| `src/constants.ts`                 | TUI constants (re-exports core constants from deerbox)       |
+| `src/task.ts`                      | Prompt input history (load/save)                             |
+| `src/github.ts`                    | GitHub token retrieval, PR URL parsing, PR state queries     |
+| `src/git/finalize.ts`             | PR creation and worktree cleanup                             |
+| `src/dashboard-utils.ts`          | Shared TUI helpers: formatting, ANSI stripping               |
+| `src/fuzzy.ts`                     | Fuzzy search for agent list filtering                        |
+| `src/pane-idle.ts`                 | Tmux pane idle detection heuristics                          |
+| `src/updater.ts`                   | Self-update check logic                                      |
+| `src/mock-agents.ts`              | Static mock agent data for demo mode                         |
+| `src/hooks/useAgentSync.ts`       | Cross-instance state sync via SQLite polling                 |
+| `src/hooks/useAgentActions.ts`    | Action dispatch for TUI agent cards                          |
+| `src/hooks/useKeyboardInput.ts`   | Global keyboard input handling for the dashboard             |
+| `src/hooks/usePromptHistory.ts`   | Prompt input history load/save/navigation                    |
+| `src/hooks/useLivePRState.ts`     | Live GitHub PR state polling                                 |
+| `src/components/LogDetailPanel.tsx` | Expanded log detail panel component                        |
+| `src/components/PromptInput.tsx`  | Multi-line prompt input with bracketed paste support         |
+| `src/components/ShortcutsBar.tsx` | Contextual keyboard shortcuts bar                            |
 
 ### Data layout
 
@@ -79,7 +106,7 @@ Each agent task:
 
 ### Config hierarchy (later wins)
 
-1. Built-in defaults (`src/config.ts` `DEFAULT_CONFIG`)
+1. Built-in defaults (`packages/deerbox/src/config.ts` `DEFAULT_CONFIG`)
 2. `~/.config/deer/config.toml` (global)
 3. `<repo>/deer.toml` (repo-local, see `deer.toml.example`)
 4. CLI overrides

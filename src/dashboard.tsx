@@ -1,8 +1,9 @@
 import { Box, Text, useApp, useStdout } from "ink";
 import { Spinner } from "@inkjs/ui";
 import React, { useState, useEffect, useRef } from "react";
-import { loadConfig } from "./config";
-import type { DeerConfig } from "./config";
+import { deerboxConfig, deerboxPreflight } from "./deerbox";
+import type { DeerConfig, PreflightResult } from "./types";
+import { t } from "./i18n";
 import { ShortcutsBar } from "./components/ShortcutsBar";
 import { LogDetailPanel } from "./components/LogDetailPanel";
 import { ContextPicker } from "./components/ContextPicker";
@@ -10,7 +11,6 @@ import { ContextChipBar } from "./components/ContextChipBar";
 import { resolveChips } from "./context/resolve";
 import { CONTEXT_SOURCES } from "./context/sources/index";
 import type { ContextChip } from "./context/types";
-import { runPreflight, type PreflightResult } from "./preflight";
 import { PromptInput } from "./components/PromptInput";
 import { useAgentSync } from "./hooks/useAgentSync";
 import { releaseAllPollers } from "./db";
@@ -34,7 +34,6 @@ import {
   ENTRY_ROWS_WITH_PR,
 } from "./constants";
 import type { AgentState } from "./agent-state";
-import { t } from "./i18n";
 
 export { stripAnsi } from "./dashboard-utils";
 
@@ -55,7 +54,7 @@ export default function Dashboard({ cwd, mockAgents }: { cwd: string; mockAgents
   const [animTick, setAnimTick] = useState(0);
   const configRef = useRef<DeerConfig | null>(null);
 
-  const { agents, setAgents, agentsRef, baseBranchRef, restoredProxiesRef, liveSessionIdsRef, runtimeTaskIdsRef, reconcile, showAll, setShowAll } = useAgentSync(cwd, configRef, mockAgents);
+  const { agents, setAgents, agentsRef, baseBranchRef, liveSessionIdsRef, runtimeTaskIdsRef, reconcile, showAll, setShowAll } = useAgentSync(cwd, configRef, mockAgents);
 
   const {
     promptHistory,
@@ -117,8 +116,8 @@ export default function Dashboard({ cwd, mockAgents }: { cwd: string; mockAgents
   // ── Load config + preflight + start config guard ───────────────────
 
   useEffect(() => {
-    if (!mockAgents) runPreflight().then(setPreflight);
-    loadConfig(cwd).then((cfg) => {
+    if (!mockAgents) deerboxPreflight().then(setPreflight);
+    deerboxConfig(cwd).then((cfg) => {
       configRef.current = cfg;
       // Re-run reconcile immediately so proxies are restored for any
       // running cross-instance tasks without waiting for the 2s poll.
@@ -134,10 +133,6 @@ export default function Dashboard({ cwd, mockAgents }: { cwd: string; mockAgents
       // tmux sessions alive so agents continue running after a restart.
       abortAllAgents();
       releaseAllPollers(process.pid);
-      for (const proxyCleanup of restoredProxiesRef.current.values()) {
-        proxyCleanup();
-      }
-      restoredProxiesRef.current.clear();
     };
 
     process.on("exit", cleanup);

@@ -4,10 +4,7 @@ import { $ } from "bun";
 const os = process.platform === "darwin" ? "darwin" : "linux";
 const arch = process.arch === "arm64" ? "arm64" : "x64";
 const target = `bun-${os}-${arch}`;
+const outfile = `dist/deerbox-${os}-${arch}`;
 
 await $`mkdir -p dist`;
-
-await Promise.all([
-  $`bun build --compile --target=${target} src/cli.tsx --outfile dist/deer-${os}-${arch}`,
-  $`bun build --compile --target=${target} packages/deerbox/src/cli.ts --outfile dist/deerbox-${os}-${arch}`,
-]);
+await $`bun build --compile --target=${target} src/cli.ts --outfile ${outfile}`;

@@ -2,7 +2,7 @@ import { test, expect, describe, beforeEach, afterEach } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { resolveCredentials } from "../src/preflight";
+import { resolveCredentials } from "../packages/deerbox/src/index";
 
 // Save and restore env vars around each test
 let savedEnv: Record<string, string | undefined>;

@@ -2,9 +2,10 @@ import { Box, Text } from "ink";
 import React from "react";
 import { availableActions, ACTION_BINDINGS } from "../state-machine";
 import type { AgentAction } from "../state-machine";
-import type { PreflightResult } from "../preflight";
+import type { PreflightResult } from "../types";
+import { t } from "../i18n";
+import type { StringKey } from "../i18n";
 import type { AgentState } from "../agent-state";
-import { t, type StringKey } from "../i18n";
 
 interface ShortcutsBarProps {
   selected: AgentState | null;

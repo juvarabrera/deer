@@ -2,12 +2,11 @@ import { test, expect, describe, afterEach, setDefaultTimeout, beforeEach } from
 import { dirname, join } from "node:path";
 
 setDefaultTimeout(30_000);
-import { startAgent, getAgentOutput, destroyAgent, deleteTask, resolveProxyUpstreams } from "../src/agent";
-import type { AgentHandle, AgentStatus } from "../src/agent";
-import type { ProxyCredential } from "../src/config";
+import { resolveProxyUpstreams, DEFAULT_CONFIG, createSrtRuntime } from "../packages/deerbox/src/index";
+import type { ProxyCredential } from "../packages/deerbox/src/index";
 import { dataDir } from "../src/task";
-import { DEFAULT_CONFIG } from "../src/config";
-import { createSrtRuntime } from "../src/sandbox/index";
+import { startAgent, getAgentOutput, destroyAgent, deleteTask } from "../src/agent";
+import type { AgentHandle, AgentStatus } from "../src/agent";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 
@@ -190,7 +189,6 @@ describe("resolveProxyUpstreams", () => {
     setEnv("CLAUDE_CODE_OAUTH_TOKEN", "oauth-token-xyz");
     setEnv("ANTHROPIC_API_KEY", "sk-ant-123");
 
-    const { DEFAULT_CONFIG } = require("../src/config");
     const result = resolveProxyUpstreams(DEFAULT_CONFIG.sandbox.proxyCredentials);
 
     expect(result.upstreams).toHaveLength(1);
@@ -203,7 +201,6 @@ describe("resolveProxyUpstreams", () => {
     unsetEnv("CLAUDE_CODE_OAUTH_TOKEN");
     setEnv("ANTHROPIC_API_KEY", "sk-ant-fallback");
 
-    const { DEFAULT_CONFIG } = require("../src/config");
     const result = resolveProxyUpstreams(DEFAULT_CONFIG.sandbox.proxyCredentials);
 
     expect(result.upstreams).toHaveLength(1);
@@ -220,7 +217,7 @@ describe("agent lifecycle", () => {
 
   afterEach(async () => {
     for (const h of handles) {
-      await destroyAgent(h, repos[0] ?? "/tmp").catch(() => {});
+      await destroyAgent(h).catch(() => {});
     }
     handles.length = 0;
     for (const r of repos) {
@@ -244,7 +241,6 @@ describe("agent lifecycle", () => {
       prompt: "test",
       baseBranch: "main",
       config: testConfig,
-      runtime: createSrtRuntime(),
     });
     handles.push(handle);
 
@@ -265,7 +261,6 @@ describe("agent lifecycle", () => {
       prompt: "echo hello",
       baseBranch: "main",
       config: testConfig,
-      runtime: createSrtRuntime(),
       onStatus: (s) => statuses.push(s),
     });
     handles.push(handle);
@@ -289,7 +284,6 @@ describe("agent lifecycle", () => {
       prompt: "echo hello",
       baseBranch: "main",
       config: testConfig,
-      runtime: createSrtRuntime(),
       taskId: preTaskId,
     });
     handles.push(handle);
@@ -306,12 +300,11 @@ describe("agent lifecycle", () => {
       prompt: "test",
       baseBranch: "main",
       config: testConfig,
-      runtime: createSrtRuntime(),
     });
     handles.push(handle);
 
     // Wait a moment for the session to start
-    await Bun.sleep(500);
+    await Bun.sleep(200);
 
     const output = await getAgentOutput(handle.sessionName);
     // Should return some lines (even if empty or error output)
@@ -327,10 +320,9 @@ describe("agent lifecycle", () => {
       prompt: "test",
       baseBranch: "main",
       config: testConfig,
-      runtime: createSrtRuntime(),
     });
 
-    await destroyAgent(handle, repo);
+    await destroyAgent(handle);
     // Don't add to handles — already destroyed
 
     // tmux session should be gone
@@ -355,7 +347,6 @@ describe("agent lifecycle", () => {
       prompt: "test",
       baseBranch: "main",
       config: testConfig,
-      runtime: createSrtRuntime(),
     });
 
     await deleteTask(handle.taskId, repo);
@@ -390,7 +381,6 @@ describe("agent lifecycle", () => {
         ...testConfig,
         defaults: { ...testConfig.defaults, setupCommand: "touch setup-marker" },
       },
-      runtime: createSrtRuntime(),
     });
     handles.push(handle);
 
@@ -413,7 +403,6 @@ describe("agent lifecycle", () => {
           ...testConfig,
           defaults: { ...testConfig.defaults, setupCommand: "exit 1" },
         },
-        runtime: createSrtRuntime(),
         onStatus: (s) => {
           if (s.phase === "setup" && "message" in s) {
             // capture the worktree path from a deeper hook isn't easy here;
@@ -444,7 +433,6 @@ describe("agent lifecycle", () => {
       prompt: "echo hello",
       baseBranch: "main",
       config: testConfig,
-      runtime: createSrtRuntime(),
     });
     handles.push(firstHandle);
     await firstHandle.kill();
@@ -458,7 +446,6 @@ describe("agent lifecycle", () => {
         ...testConfig,
         defaults: { ...testConfig.defaults, setupCommand: "touch setup-marker" },
       },
-      runtime: createSrtRuntime(),
       continueSession: {
         taskId: firstHandle.taskId,
         worktreePath: firstHandle.worktreePath,
@@ -484,7 +471,6 @@ describe("agent lifecycle", () => {
         ...testConfig,
         defaults: { ...testConfig.defaults, setupCommand: "echo setup" },
       },
-      runtime: createSrtRuntime(),
       onStatus: (s) => statuses.push(s),
     });
     handles.push(handle);
@@ -505,7 +491,6 @@ describe("agent lifecycle", () => {
       prompt: "echo hello",
       baseBranch: "main",
       config: testConfig,
-      runtime: createSrtRuntime(),
     });
     handles.push(firstHandle);
 
@@ -519,7 +504,6 @@ describe("agent lifecycle", () => {
       prompt: "should not be used",
       baseBranch: "main",
       config: testConfig,
-      runtime: createSrtRuntime(),
       continueSession: {
         taskId: firstHandle.taskId,
         worktreePath: firstHandle.worktreePath,

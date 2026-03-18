@@ -1,5 +1,5 @@
 import { test, expect, describe, beforeEach, afterEach } from "bun:test";
-import { loadConfig, DEFAULT_CONFIG } from "../src/config";
+import { loadConfig, DEFAULT_CONFIG } from "../packages/deerbox/src/index";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";

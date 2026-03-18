@@ -8,9 +8,8 @@
 import { describe, test, expect, afterEach } from "bun:test";
 import { unlinkSync } from "node:fs";
 
-import { generateTaskId } from "../../src/task";
+import { generateTaskId, dataDir } from "../../src/task";
 import {
-  getDb,
   closeDb,
   insertTask,
   updateTask,
@@ -21,7 +20,6 @@ import {
   releasePoller,
 } from "../../src/db";
 import { agentFromDbRow } from "../../src/agent-state";
-import { dataDir } from "../../src/task";
 
 const e2e = process.env.DEER_E2E ? describe : describe.skip;
 

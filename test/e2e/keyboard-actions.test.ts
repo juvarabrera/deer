@@ -89,7 +89,7 @@ e2e("keyboard actions", () => {
           // Wait for fake claude to finish
           await waitFor(
             async () => isTmuxSessionDead(`deer-${taskId}`),
-            { timeout: 30_000, label: "agent session dies" },
+            { timeout: 15_000, label: "agent session dies" },
           );
 
           // Wait for task to appear in DB (deer has processed completion)
@@ -147,7 +147,7 @@ e2e("keyboard actions", () => {
           // Wait for fake claude to finish
           await waitFor(
             async () => isTmuxSessionDead(`deer-${taskId}`),
-            { timeout: 30_000, label: "agent session dies" },
+            { timeout: 15_000, label: "agent session dies" },
           );
 
           // Wait for deer to register completion

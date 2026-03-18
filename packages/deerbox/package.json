@@ -1,0 +1,26 @@
+{
+  "name": "deerbox",
+  "version": "0.5.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "bin": {
+    "deerbox": "src/cli.ts"
+  },
+  "scripts": {
+    "dev": "bun run src/cli.ts",
+    "build": "bun run scripts/build.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sandbox-runtime": "^0.0.40",
+    "@iarna/toml": "^3.0.0"
+  },
+  "devDependencies": {
+    "bun-types": "latest",
+    "typescript": "^5.9.3"
+  },
+  "peerDependencies": {
+    "bun": ">=1.0.0"
+  }
+}

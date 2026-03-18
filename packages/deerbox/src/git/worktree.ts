@@ -15,7 +15,7 @@ export interface RepoInfo {
 
 /**
  * Detect the git repository by walking up from `startDir`.
- * Returns the repo root path, origin remote URL, and default branch.
+ * @duplicate src/git/detect.ts — keep both in sync
  */
 export async function detectRepo(startDir: string): Promise<RepoInfo> {
   const result =
@@ -102,6 +102,20 @@ export async function removeWorktree(
 
   // Clean up the worktree branch if it was a deer branch
   if (branch?.startsWith("deer/")) {
+    await Bun.$`git -C ${repoPath} branch -D ${branch}`.quiet().nothrow();
+  }
+}
+
+/**
+ * Clean up a worktree and optionally delete the branch.
+ */
+export async function cleanupWorktree(
+  repoPath: string,
+  worktreePath: string,
+  branch?: string,
+): Promise<void> {
+  await Bun.$`git -C ${repoPath} worktree remove ${worktreePath} --force`.quiet().nothrow();
+  if (branch) {
     await Bun.$`git -C ${repoPath} branch -D ${branch}`.quiet().nothrow();
   }
 }

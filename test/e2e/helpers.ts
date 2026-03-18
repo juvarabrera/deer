@@ -124,7 +124,7 @@ export async function startDeerSession(
   await Bun.$`tmux new-session -d -s ${session} -x ${cols} -y ${rows} -c ${repoPath} ${fullCmd}`.quiet();
 
   // Brief pause to let the TUI initialize
-  await Bun.sleep(500);
+  await Bun.sleep(200);
 
   return {
     sendKeys: (keys: string) => sendKeysToTmux(session, keys),

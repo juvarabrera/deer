@@ -1,6 +1,6 @@
 import { test, expect, describe, beforeEach, afterEach } from "bun:test";
-import { applyEcosystems, BUILTIN_PLUGINS } from "../src/ecosystems";
-import type { EcosystemPlugin } from "../src/ecosystems";
+import { applyEcosystems, BUILTIN_PLUGINS } from "../packages/deerbox/src/index";
+import type { EcosystemPlugin } from "../packages/deerbox/src/index";
 import { mkdtemp, rm, mkdir, writeFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";

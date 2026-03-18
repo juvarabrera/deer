@@ -1,24 +1,19 @@
 // ── Centralized constants ───────────────────────────────────────────
+// VERSION, HOME, DEFAULT_MODEL are duplicated in packages/deerbox/src/constants.ts — keep in sync
 
 import pkg from "../package.json";
 
 /** Package version, inlined at build time */
 export const VERSION = pkg.version;
 
-/** Polling interval for agent completion checks in agent.ts */
-export const AGENT_POLL_INTERVAL_MS = 3_000;
+/** HOME directory fallback */
+export const HOME = process.env.HOME ?? "/root";
 
 /** Default Claude model to use */
 export const DEFAULT_MODEL = "sonnet";
 
-/** Max number of polls to wait for the bypass permissions dialog */
-export const BYPASS_DIALOG_MAX_POLLS = 15;
-
-/** Delay between polls when looking for the bypass dialog */
-export const BYPASS_DIALOG_POLL_MS = 500;
-
-/** Delay between keystrokes when dismissing the bypass dialog */
-export const BYPASS_DIALOG_KEY_DELAY_MS = 200;
+/** Polling interval for agent completion checks in agent.ts */
+export const AGENT_POLL_INTERVAL_MS = 3_000;
 
 /** Max diff length sent to Claude for PR metadata generation */
 export const MAX_DIFF_FOR_PR_METADATA = 20_000;
@@ -56,5 +51,11 @@ export const ENTRY_ROWS_WITH_PR = ENTRY_ROWS_BASE + 1;
 /** Upload animation frames */
 export const UPLOAD_FRAMES = ["▄", "█", "▀", "─"];
 
-/** HOME directory fallback */
-export const HOME = process.env.HOME ?? "/root";
+/** Max number of polls to wait for the bypass permissions dialog */
+export const BYPASS_DIALOG_MAX_POLLS = 15;
+
+/** Delay between polls when looking for the bypass dialog */
+export const BYPASS_DIALOG_POLL_MS = 500;
+
+/** Delay between keystrokes when dismissing the bypass dialog */
+export const BYPASS_DIALOG_KEY_DELAY_MS = 200;

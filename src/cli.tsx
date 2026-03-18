@@ -30,12 +30,12 @@ if (process.env.CLAUDE_CODE_OAUTH_TOKEN) {
 
 import { render } from "ink";
 import React from "react";
-import { detectRepo } from "./git/worktree.ts";
+import { detectRepo } from "./git/detect";
+import { setLang, detectLang } from "./i18n";
+import { VERSION } from "./constants";
 import Dashboard from "./dashboard.tsx";
 import DemoDashboard from "./demo-dashboard.tsx";
 import { checkAndUpdate } from "./updater.ts";
-import { setLang, detectLang } from "./i18n.ts";
-import { VERSION } from "./constants.ts";
 
 setLang(detectLang());
 

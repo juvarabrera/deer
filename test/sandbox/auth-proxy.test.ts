@@ -1,5 +1,6 @@
 import { test, expect, describe, afterEach } from "bun:test";
-import { startAuthProxy, type ProxyUpstream } from "../../src/sandbox/auth-proxy";
+import { startAuthProxy } from "../../packages/deerbox/src/index";
+import type { ProxyUpstream } from "../../packages/deerbox/src/index";
 import { createServer, type Server } from "node:http";
 import { connect } from "node:net";
 import { mkdtemp, rm } from "node:fs/promises";

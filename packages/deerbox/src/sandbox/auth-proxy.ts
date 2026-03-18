@@ -1,29 +1,17 @@
 /**
  * Host-side authenticating MITM proxy.
  *
- * Keeps sensitive credentials (OAuth tokens, API keys) on the host and out of
- * the sandbox. Spawns a standalone Node.js subprocess that listens on a Unix
- * socket, receiving proxy-style HTTP requests forwarded by SRT's built-in
- * proxy for matching domains.
+ * Spawns a standalone Node.js subprocess on a Unix socket. SRT routes
+ * matching domains through the socket; the proxy injects real auth headers
+ * and forwards to the upstream over HTTPS.
  *
- * We use a real Node.js process (not Bun) because Bun's node:http/node:https
- * polyfills break on long-lived streaming connections (SSE).
- *
- * Flow:
- * 1. Sandbox sets ANTHROPIC_BASE_URL=http://api.anthropic.com (HTTP, not HTTPS)
- * 2. Claude Code sends HTTP request → SRT proxy
- * 3. SRT proxy checks domain allowlist → matches mitmProxy config
- * 4. SRT forwards proxy-style request to our Unix socket
- * 5. Node.js proxy injects real auth headers and makes HTTPS request to upstream
- * 6. Response flows back through the chain
- *
- * Designed to be extensible: each upstream is a { domain, target, headers } pair,
- * so adding new APIs is just a config change.
+ * Supports daemonized mode where the proxy survives the parent process exit
+ * (used by `deerbox prepare` so deer can manage the proxy lifecycle).
  */
 
 import { spawn } from "node:child_process";
 import { join } from "node:path";
-import { mkdirSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, writeFileSync, existsSync, openSync } from "node:fs";
 import { createInterface } from "node:readline";
 
 import authProxySource from "./auth-proxy-server.mjs" with { type: "text" };
@@ -42,17 +30,14 @@ export interface AuthProxy {
   socketPath: string;
   /** Domains this proxy handles (for SRT mitmProxy config) */
   domains: string[];
+  /** PID of the proxy process */
+  pid: number;
   /** Shut down the proxy server */
   close: () => Promise<void>;
 }
 
 /**
  * Materialize the auth proxy server script to disk so Node.js can run it.
- *
- * In dev (bun run dev) the .mjs file is already on disk, but inside a compiled
- * Bun binary __dirname points to the virtual /$bunfs/ filesystem which Node
- * cannot access. We use Bun's `import … with { type: "text" }` to embed the
- * source at compile time, then write it to the deer data dir on first use.
  */
 function ensureServerScript(): string {
   const dataDir = join(process.env.HOME ?? "/root", ".local", "share", "deer");
@@ -69,21 +54,53 @@ function ensureServerScript(): string {
 /**
  * Start the authenticating MITM proxy as a Node.js subprocess.
  *
- * Spawns auth-proxy-server.mjs under real Node.js to get correct HTTP
- * streaming behavior. The subprocess communicates via JSON lines on stdout.
+ * @param daemonize - If true, detach the process so it survives parent exit.
+ *   A PID file is written at `<socketPath>.pid`. The caller is responsible
+ *   for killing the process later.
  */
 export async function startAuthProxy(
   socketPath: string,
   upstreams: ProxyUpstream[],
   onLog?: (message: string) => void,
+  daemonize = false,
 ): Promise<AuthProxy> {
   const serverScript = ensureServerScript();
+  const pidFilePath = `${socketPath}.pid`;
 
+  if (daemonize) {
+    // Daemonized mode: no pipes — poll for the socket file to appear
+    const devNull = openSync("/dev/null", "w");
+    const child = spawn("node", [serverScript, socketPath, JSON.stringify(upstreams)], {
+      stdio: ["ignore", devNull, devNull],
+      detached: true,
+    });
+
+    const pid = child.pid!;
+    writeFileSync(pidFilePath, String(pid));
+    child.unref();
+
+    // Poll for the socket to appear (the server creates it when ready)
+    for (let i = 0; i < 20; i++) {
+      await new Promise((r) => setTimeout(r, 500));
+      if (existsSync(socketPath)) {
+        return {
+          socketPath,
+          domains: upstreams.map((u) => u.domain),
+          pid,
+          async close() {
+            try { process.kill(pid, "SIGTERM"); } catch { /* already dead */ }
+          },
+        };
+      }
+    }
+    throw new Error("auth-proxy subprocess did not create socket in 10s");
+  }
+
+  // Non-daemonized mode: use pipes for log forwarding
   const child = spawn("node", [serverScript, socketPath, JSON.stringify(upstreams)], {
     stdio: ["ignore", "pipe", "pipe"],
   });
 
-  // Forward stderr for debugging
   child.stderr?.on("data", (data: Buffer) => {
     onLog?.(`[proxy:stderr] ${data.toString().trim()}`);
   });
@@ -101,7 +118,6 @@ export async function startAuthProxy(
         const msg = JSON.parse(line);
         if (msg.ready) {
           child.removeListener("exit", onExit);
-          // Continue reading log lines after ready
           rl.on("line", (logLine: string) => {
             try {
               const logMsg = JSON.parse(logLine);
@@ -115,17 +131,16 @@ export async function startAuthProxy(
       } catch { /* ignore malformed */ }
     });
 
-    // Timeout
     setTimeout(() => reject(new Error("auth-proxy subprocess did not become ready in 10s")), 10000);
   });
 
   return {
     socketPath,
     domains: upstreams.map((u) => u.domain),
+    pid: child.pid!,
     async close() {
       if (!child.killed) {
         child.kill("SIGTERM");
-        // Wait for exit with timeout
         await new Promise<void>((resolve) => {
           const timeout = setTimeout(() => {
             child.kill("SIGKILL");
@@ -139,4 +154,15 @@ export async function startAuthProxy(
       }
     },
   };
+}
+
+/**
+ * Kill an auth proxy by PID (for cleanup after daemonized start).
+ */
+export function killAuthProxy(pid: number): void {
+  try {
+    process.kill(pid, "SIGTERM");
+  } catch {
+    // Process already dead
+  }
 }

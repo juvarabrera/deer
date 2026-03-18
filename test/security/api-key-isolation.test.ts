@@ -6,11 +6,8 @@
  * appear in the sandbox env or the srt command arguments.
  */
 import { test, expect, describe } from "bun:test";
-import { createSrtRuntime } from "../../src/sandbox/srt";
-import { resolveProxyUpstreams } from "../../src/agent";
-import { DEFAULT_CONFIG } from "../../src/config";
-import type { ProxyCredential } from "../../src/config";
-import type { SandboxRuntimeOptions } from "../../src/sandbox/runtime";
+import { createSrtRuntime, resolveProxyUpstreams, DEFAULT_CONFIG } from "../../packages/deerbox/src/index";
+import type { ProxyCredential, SandboxRuntimeOptions } from "../../packages/deerbox/src/index";
 
 const defaults: SandboxRuntimeOptions = {
   worktreePath: "/tmp/deer-test-worktree",
@@ -185,7 +182,7 @@ describe("credential proxy resolution", () => {
 
   test("OAuth token header reaches upstream, API key header does not (end-to-end)", async () => {
     const { createServer } = await import("node:http");
-    const { startAuthProxy } = await import("../../src/sandbox/auth-proxy");
+    const { startAuthProxy } = await import("deerbox");
     const { mkdtemp } = await import("node:fs/promises");
     const { join } = await import("node:path");
     const { tmpdir } = await import("node:os");
