@@ -8,6 +8,9 @@
 //   t("header_idle")                        // "idle" | "待機中"
 //   t("header_active", { n: 3 })            // "3 active" | "3件実行中"
 
+import { setLang as _setLang, getLang as _getLang } from "deerbox";
+export { getPRLanguage } from "deerbox";
+
 export type Lang = "en" | "ja" | "zh" | "ko" | "ru";
 
 const strings = {
@@ -470,41 +473,17 @@ const strings = {
 
 export type StringKey = keyof typeof strings.en;
 
-let _lang: Lang = "en";
-
 export function setLang(lang: Lang): void {
-  _lang = lang;
+  _setLang(lang);
 }
 
 export function getLang(): Lang {
-  return _lang;
-}
-
-/**
- * Maps each language to the display name passed to Claude when generating PR
- * metadata. English is null — no instruction is needed since Claude defaults to
- * English. Add an entry here whenever a new Lang is added.
- */
-const PR_LANGUAGE_NAMES: Record<Lang, string | null> = {
-  en: null,
-  ja: "Japanese (日本語)",
-  zh: "Chinese Simplified (简体中文)",
-  ko: "Korean (한국어)",
-  ru: "Russian (русский)",
-};
-
-/**
- * Returns the language name to request in the PR metadata prompt, or null if
- * no instruction is needed (i.e. the language is English).
- */
-export function getPRLanguage(): string | null {
-  return PR_LANGUAGE_NAMES[_lang];
+  return _getLang();
 }
 
 /**
  * Detect language from CLI args, CLAUDE_CODE_LOCALE, or system LANG.
  * Priority: --lang=<code> > CLAUDE_CODE_LOCALE > system LANG > "en"
- * @duplicate packages/deerbox/src/i18n.ts — keep both in sync
  */
 export function detectLang(): Lang {
   const langArg = process.argv.find((a) => a.startsWith("--lang="));
@@ -538,7 +517,7 @@ export function detectLang(): Lang {
  *   t("header_active", { n: 3 })  // "3 active" or "3件実行中"
  */
 export function t(key: StringKey, vars?: Record<string, string | number>): string {
-  let s = strings[_lang][key] as string;
+  let s = strings[_getLang()][key] as string;
   if (vars) {
     for (const [k, v] of Object.entries(vars)) {
       s = s.replaceAll(`{${k}}`, String(v));

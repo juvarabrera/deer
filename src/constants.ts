@@ -15,12 +15,6 @@ export const DEFAULT_MODEL = "sonnet";
 /** Polling interval for agent completion checks in agent.ts */
 export const AGENT_POLL_INTERVAL_MS = 3_000;
 
-/** Max diff length sent to Claude for PR metadata generation */
-export const MAX_DIFF_FOR_PR_METADATA = 20_000;
-
-/** Model used to generate PR metadata (title, body, branch name) */
-export const PR_METADATA_MODEL = "sonnet";
-
 /** Reconcile interval for SQLite-based cross-instance sync */
 export const DB_RECONCILE_INTERVAL_MS = 2_000;
 

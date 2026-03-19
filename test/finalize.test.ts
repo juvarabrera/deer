@@ -2,7 +2,7 @@ import { test, expect, describe, beforeEach, afterEach } from "bun:test";
 import { mkdtemp, rm, mkdir, writeFile } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
-import { ensureDeerEmojiPrefix, findPRTemplate, parsePRMetadataResponse, buildClaudeSubprocessEnv } from "../src/git/finalize";
+import { ensureDeerEmojiPrefix, findPRTemplate, parsePRMetadataResponse, buildClaudeSubprocessEnv } from "deerbox";
 
 describe("ensureDeerEmojiPrefix", () => {
   test("adds deer emoji to plain title", () => {

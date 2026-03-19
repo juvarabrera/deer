@@ -7,3 +7,6 @@ dist/
 _site/
 docs/.jekyll-cache/
 docs/vendor/
+
+# kadai
+.kadai/.last-action

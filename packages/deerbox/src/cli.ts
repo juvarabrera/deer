@@ -22,6 +22,9 @@ import { runPreflight, resolveCredentials } from "./preflight";
 import { killAuthProxy } from "./sandbox/auth-proxy";
 import { VERSION, DEFAULT_MODEL } from "./constants";
 import { dataDir } from "./task";
+import { setLang, detectLang } from "./i18n";
+import { createPullRequest, hasChanges } from "./git/finalize";
+import { runPostSession, interactivePromptChoice, defaultOpenShell } from "./post-session";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -163,6 +166,9 @@ async function cmdRun(prompt: string | undefined, args: string[]) {
   const config = await loadConfig(repoPath);
   const effectiveBranch = baseBranch ?? config.defaults.baseBranch ?? defaultBranch;
 
+  // Initialize language for PR metadata generation
+  setLang(detectLang());
+
   const session = await prepare({
     repoPath,
     prompt,
@@ -187,8 +193,30 @@ async function cmdRun(prompt: string | undefined, args: string[]) {
     await session.cleanup();
     console.error(`\nWorktree kept at: ${session.worktreePath}`);
     console.error(`  Branch: ${session.branch}`);
-  } else {
-    await session.destroy();
+    process.exit(exitCode);
+  }
+
+  const outcome = await runPostSession(
+    {
+      repoPath,
+      worktreePath: session.worktreePath,
+      branch: session.branch,
+      baseBranch: effectiveBranch,
+      prompt: prompt ?? "Interactive session",
+    },
+    {
+      hasChanges,
+      promptChoice: interactivePromptChoice,
+      createPR: createPullRequest,
+      openShell: defaultOpenShell,
+      cleanup: () => session.cleanup(),
+      destroy: () => session.destroy(),
+      log: (msg) => console.error(msg),
+    },
+  );
+
+  if (outcome.action === "pr_failed") {
+    process.exit(1);
   }
 
   process.exit(exitCode);

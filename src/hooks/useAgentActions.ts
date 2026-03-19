@@ -9,7 +9,7 @@ import { isTmuxSessionDead, captureTmuxPane, applyTmuxStatusBar } from "../sandb
 import type { AgentState } from "../agent-state";
 import { createAgentState } from "../agent-state";
 import { insertTask, updateTask, deleteTaskRow, claimPoller, releasePoller } from "../db";
-import { updatePullRequest, createPullRequest } from "../git/finalize";
+import { updatePullRequest, createPullRequest } from "deerbox";
 import { transition } from "../state-machine";
 import { advancePaneState, isIdleState, seedIdleState } from "../pane-idle";
 import type { PaneState } from "../pane-idle";

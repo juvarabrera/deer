@@ -1,14 +1,44 @@
 // ── i18n (deerbox) ───────────────────────────────────────────────────
 //
-// Minimal language detection for the sandbox layer.
+// Language detection and PR language support for the core library.
 // The full string table and t() function live in deer's src/i18n.ts.
 
 export type Lang = "en" | "ja" | "zh" | "ko" | "ru";
 
+let _lang: Lang = "en";
+
+export function setLang(lang: Lang): void {
+  _lang = lang;
+}
+
+export function getLang(): Lang {
+  return _lang;
+}
+
+/**
+ * Maps each language to the display name passed to Claude when generating PR
+ * metadata. English is null — no instruction is needed since Claude defaults to
+ * English.
+ */
+const PR_LANGUAGE_NAMES: Record<Lang, string | null> = {
+  en: null,
+  ja: "Japanese (日本語)",
+  zh: "Chinese Simplified (简体中文)",
+  ko: "Korean (한국어)",
+  ru: "Russian (русский)",
+};
+
+/**
+ * Returns the language name to request in the PR metadata prompt, or null if
+ * no instruction is needed (i.e. the language is English).
+ */
+export function getPRLanguage(): string | null {
+  return PR_LANGUAGE_NAMES[_lang];
+}
+
 /**
  * Detect language from CLI args, CLAUDE_CODE_LOCALE, or system LANG.
  * Priority: --lang=<code> > CLAUDE_CODE_LOCALE > system LANG > "en"
- * @duplicate src/i18n.ts — keep both in sync
  */
 export function detectLang(): Lang {
   const langArg = process.argv.find((a) => a.startsWith("--lang="));

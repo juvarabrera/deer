@@ -22,8 +22,30 @@ export type { ProxyUpstream, AuthProxy } from "./sandbox/auth-proxy";
 export { applyEcosystems, BUILTIN_PLUGINS } from "./ecosystems";
 export type { EcosystemPlugin, EcosystemResult } from "./ecosystems";
 
+// Git finalize (PR creation)
+export {
+  createPullRequest,
+  updatePullRequest,
+  pushBranchUpdates,
+  hasChanges,
+  findPRTemplate,
+  ensureDeerEmojiPrefix,
+  parsePRMetadataResponse,
+  buildClaudeSubprocessEnv,
+} from "./git/finalize";
+export type {
+  CreatePRResult,
+  CreatePROptions,
+  UpdatePROptions,
+  PushBranchOptions,
+} from "./git/finalize";
+
+// Post-session (interactive finalize prompt)
+export { runPostSession, parseChoice, renderPromptMenu } from "./post-session";
+export type { PostSessionChoice, PostSessionOutcome, PostSessionDeps, PostSessionContext } from "./post-session";
+
 // Utilities
 export { generateTaskId, dataDir } from "./task";
-export { detectLang } from "./i18n";
+export { detectLang, setLang, getLang, getPRLanguage } from "./i18n";
 export type { Lang } from "./i18n";
-export { VERSION, HOME, DEFAULT_MODEL } from "./constants";
+export { VERSION, HOME, DEFAULT_MODEL, MAX_DIFF_FOR_PR_METADATA, PR_METADATA_MODEL } from "./constants";
