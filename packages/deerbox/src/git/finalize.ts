@@ -11,17 +11,46 @@ import { resolveCredentials } from "../preflight";
  * Stage all changes without committing.
  */
 async function stageChanges(worktreePath: string): Promise<void> {
-  await Bun.$`git -C ${worktreePath} add -A`.quiet();
+  const result = await Bun.$`git -C ${worktreePath} add -A`.quiet().nothrow();
+  if (result.exitCode !== 0) {
+    throw new Error(`git add failed (exit ${result.exitCode}): ${result.stderr.toString().trim()}`);
+  }
+}
+
+/**
+ * Try a git commit, retrying with --no-verify if it fails.
+ */
+async function commitWithFallback(
+  worktreePath: string,
+  args: string[],
+  onLog?: (msg: string) => void,
+): Promise<void> {
+  const baseCmd = ["git", "-C", worktreePath, "commit", ...args];
+  const result = await Bun.spawn(baseCmd, { stdout: "pipe", stderr: "pipe" });
+  const exitCode = await result.exited;
+  if (exitCode === 0) return;
+
+  const stderr = await new Response(result.stderr).text();
+  onLog?.(`[pr] git commit failed, retrying with --no-verify: ${stderr.trim().split("\n")[0]}`);
+
+  const retry = await Bun.spawn(
+    ["git", "-C", worktreePath, "commit", "--no-verify", ...args],
+    { stdout: "pipe", stderr: "pipe" },
+  );
+  const retryExit = await retry.exited;
+  if (retryExit === 0) return;
+  const retryStderr = await new Response(retry.stderr).text();
+  throw new Error(`git commit failed (exit ${retryExit}): ${retryStderr.trim()}`);
 }
 
 /**
  * Commit staged/unstaged changes if any exist. No-op if the worktree is clean.
  * @returns true if a commit was created, false if the worktree was clean.
  */
-async function commitIfNeeded(worktreePath: string, message: string): Promise<boolean> {
-  const status = await Bun.$`git -C ${worktreePath} status --porcelain`.quiet();
+async function commitIfNeeded(worktreePath: string, message: string, onLog?: (msg: string) => void): Promise<boolean> {
+  const status = await Bun.$`git -C ${worktreePath} status --porcelain`.quiet().nothrow();
   if (status.stdout.toString().trim().length > 0) {
-    await Bun.$`git -C ${worktreePath} commit -m ${message}`.quiet();
+    await commitWithFallback(worktreePath, ["-m", message], onLog);
     return true;
   }
   return false;
@@ -32,9 +61,9 @@ async function commitIfNeeded(worktreePath: string, message: string): Promise<bo
  * No-op if the worktree is clean.
  * @returns true if a commit was created, false if the worktree was clean.
  */
-async function stageAndCommit(worktreePath: string, message = "deer: uncommitted changes from agent session"): Promise<boolean> {
+async function stageAndCommit(worktreePath: string, message = "deer: uncommitted changes from agent session", onLog?: (msg: string) => void): Promise<boolean> {
   await stageChanges(worktreePath);
-  return commitIfNeeded(worktreePath, message);
+  return commitIfNeeded(worktreePath, message, onLog);
 }
 
 /**
@@ -355,7 +384,7 @@ export async function createPullRequest(options: CreatePROptions): Promise<Creat
   // PR metadata generation. We commit with a temporary message, then amend with
   // the real title once Claude generates the PR metadata.
   log(`[pr] Staging and committing changes...`);
-  const hadUncommitted = await stageAndCommit(worktreePath, PENDING_PR_METADATA_MSG);
+  const hadUncommitted = await stageAndCommit(worktreePath, PENDING_PR_METADATA_MSG, onLog);
 
   // Generate PR metadata using Claude (diff now includes all committed changes)
   log(`[pr] Finding PR template...`);
@@ -373,7 +402,7 @@ export async function createPullRequest(options: CreatePROptions): Promise<Creat
   const headMsg = headMsgResult.stdout.toString().trim();
   if (hadUncommitted || headMsg === PENDING_PR_METADATA_MSG) {
     log(`[pr] Updating commit message...`);
-    await Bun.$`git -C ${worktreePath} commit --amend -m ${metadata.title}`.quiet();
+    await commitWithFallback(worktreePath, ["--amend", "-m", metadata.title], onLog);
   }
 
   // Rename the branch if Claude provided a name
@@ -450,7 +479,7 @@ export async function updatePullRequest(options: UpdatePROptions): Promise<void>
 
   // Stage and commit changes so the diff used for metadata generation is complete.
   log(`[pr] Staging and committing changes...`);
-  const hadUncommitted = await stageAndCommit(worktreePath, PENDING_PR_METADATA_MSG);
+  const hadUncommitted = await stageAndCommit(worktreePath, PENDING_PR_METADATA_MSG, onLog);
 
   // Regenerate PR metadata from the updated diff
   log(`[pr] Finding PR template...`);
@@ -467,7 +496,7 @@ export async function updatePullRequest(options: UpdatePROptions): Promise<void>
   const headMsg = headMsgResult.stdout.toString().trim();
   if (hadUncommitted || headMsg === PENDING_PR_METADATA_MSG) {
     log(`[pr] Updating commit message...`);
-    await Bun.$`git -C ${worktreePath} commit --amend -m ${metadata.title}`.quiet();
+    await commitWithFallback(worktreePath, ["--amend", "-m", metadata.title], onLog);
   }
 
   log(`[pr] Pushing branch ${finalBranch}...`);
